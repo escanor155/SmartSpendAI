@@ -104,7 +104,7 @@ export default function DashboardPage() {
           <CardContent>
             {/* Placeholder for a simple chart representation */}
             <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed bg-muted/50">
-               <Image src="https://placehold.co/300x200.png" alt="Spending chart placeholder" width={300} height={200} data-ai-hint="chart graph" />
+               <Image src="https://placehold.co/300x200.png" alt="Spending chart placeholder" width={300} height={200} data-ai-hint="chart graph" priority />
             </div>
             <p className="mt-2 text-center text-sm text-muted-foreground">
               Detailed charts available in <Link href="/reports" className="text-primary hover:underline">Reports</Link>.
