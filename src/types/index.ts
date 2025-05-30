@@ -26,9 +26,12 @@ export interface ShoppingListItem {
   name: string;
   category?: string;
   quantity?: number;
-  notes?: string;
   isPurchased: boolean;
   isAISuggested?: boolean;
+  price?: number;
+  brand?: string;
+  storeName?: string;
+  notes?: string;
 }
 
 export interface Category {
