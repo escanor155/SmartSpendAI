@@ -1,3 +1,4 @@
+
 "use client";
 
 import { PageHeader } from "@/components/common/page-header";
@@ -7,8 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCurrency } from "@/contexts/currency-context";
 
 export default function SettingsPage() {
+  const { selectedCurrency, setSelectedCurrency, availableCurrencies } = useCurrency();
+
   return (
     <>
       <PageHeader
@@ -80,6 +85,33 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">Receive AI-powered suggestions for your shopping list.</p>
               </div>
               <Switch id="ai-shopping-suggestions" defaultChecked />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Currency</CardTitle>
+            <CardDescription>Choose your preferred currency for displaying financial values.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="currency-select">Select Currency</Label>
+              <Select
+                value={selectedCurrency.code}
+                onValueChange={(value) => setSelectedCurrency(value)}
+              >
+                <SelectTrigger id="currency-select" className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="Select currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableCurrencies.map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.name} ({currency.symbol})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>

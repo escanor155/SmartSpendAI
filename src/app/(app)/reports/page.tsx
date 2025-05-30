@@ -1,3 +1,4 @@
+
 "use client";
 
 import { PageHeader } from "@/components/common/page-header";
@@ -6,6 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import type { Expense } from "@/types";
 import { useState, useEffect } from "react";
+import { useCurrency } from "@/contexts/currency-context";
 
 // Mock data for expenses - replace with actual data fetching
 const mockExpenses: Expense[] = [
@@ -50,6 +52,7 @@ const processExpensesForMonthlyTrend = (expenses: Expense[]) => {
 export default function ReportsPage() {
   const [expensesByCategory, setExpensesByCategory] = useState<any[]>([]);
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
+  const { selectedCurrency } = useCurrency();
 
   useEffect(() => {
     setExpensesByCategory(processExpensesForCategoryChart(mockExpenses));
@@ -82,7 +85,25 @@ export default function ReportsPage() {
             <ChartContainer config={categoryChartConfig} className="min-h-[300px] w-full">
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <ChartTooltipContent hideLabel nameKey="name" />
+                  <ChartTooltipContent 
+                    hideLabel 
+                    nameKey="name"
+                    formatter={(value, name, item) => {
+                      const itemPayload = item.payload;
+                      if (!itemPayload) return null;
+                      const color = itemPayload.fill || itemPayload.color;
+                      const categoryName = itemPayload.name;
+                      return (
+                        <div className="flex items-center gap-2 text-sm">
+                          <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                          <div className="flex-1">
+                            <span>{categoryName}: </span>
+                            <span className="font-bold">{selectedCurrency.symbol}{Number(value).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
                   <Pie data={expensesByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
                     {expensesByCategory.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
@@ -106,8 +127,29 @@ export default function ReportsPage() {
                 <BarChart data={monthlyTrend}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="name" tickLine={false} tickMargin={10} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} tickMargin={10} />
-                   <ChartTooltipContent />
+                  <YAxis 
+                    tickLine={false} 
+                    axisLine={false} 
+                    tickMargin={10} 
+                    tickFormatter={(value) => `${selectedCurrency.symbol}${value}`}
+                  />
+                   <ChartTooltipContent 
+                     formatter={(value, name, item) => {
+                        const itemPayload = item.payload;
+                        if (!itemPayload) return null;
+                        const color = itemPayload.fill || itemPayload.color;
+                        const label = monthlyTrendChartConfig[name as keyof typeof monthlyTrendChartConfig]?.label || name;
+                        return (
+                          <div className="flex items-center gap-2 text-sm">
+                            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                            <div className="flex-1">
+                              <span>{label}: </span>
+                              <span className="font-bold">{selectedCurrency.symbol}{Number(value).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        );
+                    }}
+                   />
                   <Bar dataKey="total" fill="var(--color-total)" radius={4} />
                   <Legend />
                 </BarChart>

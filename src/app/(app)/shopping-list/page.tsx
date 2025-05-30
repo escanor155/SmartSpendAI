@@ -7,14 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label }
-from '@/components/ui/label';
+import { Label } from '@/components/ui/label';
 import { PlusCircle, Trash2, Sparkles, Loader2, ShoppingCart, Search } from "lucide-react";
 import type { ShoppingListItem, Expense } from "@/types"; // Added Expense type
 import { suggestShoppingListItems, type SuggestShoppingListItemsInput } from "@/ai/flows/suggest-shopping-list-items";
 import { processShoppingRequest, type ProcessShoppingRequestInput, type ProcessShoppingRequestOutput } from "@/ai/flows/process-shopping-request";
 import { cn } from "@/lib/utils";
 import { Textarea } from '@/components/ui/textarea'; // Using Textarea for potentially longer prompts
+import { useCurrency } from "@/contexts/currency-context";
 
 // Mock past purchases - in a real app, this would come from user's expense history
 const mockPastPurchasesForAISuggestions = "milk, eggs, bread, chicken, apples, bananas, cheese, pasta, rice, coffee";
@@ -38,6 +38,7 @@ export default function ShoppingListPage() {
   const [isProcessingAgentRequest, setIsProcessingAgentRequest] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { selectedCurrency } = useCurrency();
 
   const handleAgenticAddItem = async () => {
     if (userPrompt.trim() === "") return;
@@ -214,7 +215,7 @@ export default function ShoppingListPage() {
                         </Label>
                         {(item.price || item.storeName || item.brand || item.notes) && (
                           <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
-                            {item.price && <p>Price: ${item.price.toFixed(2)}</p>}
+                            {item.price && <p>Price: {selectedCurrency.symbol}{item.price.toFixed(2)}</p>}
                             {item.storeName && <p>Store: {item.storeName}</p>}
                             {item.brand && <p>Brand: {item.brand}</p>}
                             {item.notes && <p className="italic">{item.notes}</p>}

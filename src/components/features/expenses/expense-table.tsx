@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Expense } from "@/types";
@@ -7,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from 'date-fns';
+import { useCurrency } from "@/contexts/currency-context";
 
 interface ExpenseTableProps {
   expenses: Expense[];
@@ -15,6 +17,8 @@ interface ExpenseTableProps {
 }
 
 export function ExpenseTable({ expenses, onEdit, onDelete }: ExpenseTableProps) {
+  const { selectedCurrency } = useCurrency();
+
   if (expenses.length === 0) {
     return <p className="text-muted-foreground text-center py-8">No expenses recorded yet.</p>;
   }
@@ -40,7 +44,7 @@ export function ExpenseTable({ expenses, onEdit, onDelete }: ExpenseTableProps) 
               <TableCell>
                 <Badge variant="secondary">{expense.category}</Badge>
               </TableCell>
-              <TableCell className="text-right">${expense.price.toFixed(2)}</TableCell>
+              <TableCell className="text-right">{selectedCurrency.symbol}{expense.price.toFixed(2)}</TableCell>
               <TableCell>{expense.storeName || "-"}</TableCell>
               <TableCell className="text-right">
                 <DropdownMenu>

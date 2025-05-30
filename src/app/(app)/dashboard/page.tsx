@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3 } from "lucide-react";
 import Image from "next/image";
+import { useCurrency } from "@/contexts/currency-context";
 
 // Sample data for charts - replace with actual data fetching and chart components
 const sampleSpendingData = [
@@ -17,6 +19,8 @@ const sampleSpendingData = [
 ];
 
 export default function DashboardPage() {
+  const { selectedCurrency } = useCurrency();
+
   return (
     <>
       <PageHeader
@@ -30,7 +34,7 @@ export default function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$1,234.56</div>
+            <div className="text-2xl font-bold">{selectedCurrency.symbol}1,234.56</div>
             <p className="text-xs text-muted-foreground">+20.1% from last month</p>
           </CardContent>
         </Card>
@@ -42,7 +46,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">3</div>
-            <p className="text-xs text-muted-foreground">$250.00 due this week</p>
+            <p className="text-xs text-muted-foreground">{selectedCurrency.symbol}250.00 due this week</p>
           </CardContent>
         </Card>
 

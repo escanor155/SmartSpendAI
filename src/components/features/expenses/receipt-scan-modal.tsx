@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useCallback } from 'react';
@@ -11,6 +12,7 @@ import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
 import type { Expense, ScannedItem } from "@/types";
 import { format } from 'date-fns';
 import Image from 'next/image';
+import { useCurrency } from "@/contexts/currency-context";
 
 interface ReceiptScanModalProps {
   onReceiptScanned: (expenses: Expense[]) => void;
@@ -23,6 +25,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanReceiptOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { selectedCurrency } = useCurrency();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -145,11 +148,11 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
             </Alert>
             <div className="max-h-60 overflow-y-auto rounded-md border p-4 space-y-2 text-sm">
               <p><strong>Store:</strong> {scanResult.storeName}</p>
-              <p><strong>Total:</strong> ${scanResult.total.toFixed(2)}</p>
+              <p><strong>Total:</strong> {selectedCurrency.symbol}{scanResult.total.toFixed(2)}</p>
               <strong>Items:</strong>
               <ul>
                 {scanResult.items.map((item, index) => (
-                  <li key={index}>- {item.name} (${item.price.toFixed(2)}) {item.brand && `[${item.brand}]`}</li>
+                  <li key={index}>- {item.name} ({selectedCurrency.symbol}{item.price.toFixed(2)}) {item.brand && `[${item.brand}]`}</li>
                 ))}
               </ul>
             </div>
