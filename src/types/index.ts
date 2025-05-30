@@ -1,3 +1,4 @@
+
 export interface Expense {
   id: string;
   name: string;
@@ -13,6 +14,7 @@ export interface ScannedItem {
   name: string;
   price: number;
   brand: string;
+  category: string; // Added category
 }
 
 export interface ScannedReceiptData {

@@ -1,9 +1,8 @@
-// Scans a receipt image and extracts item details using OCR.
 
 'use server';
 
 /**
- * @fileOverview Extracts item details from a receipt image.
+ * @fileOverview Extracts item details from a receipt image, including categorization.
  *
  * - scanReceipt - A function that handles the receipt scanning process.
  * - ScanReceiptInput - The input type for the scanReceipt function.
@@ -28,7 +27,8 @@ const ScanReceiptOutputSchema = z.object({
     z.object({
       name: z.string().describe('The name of the item.'),
       price: z.number().describe('The price of the item.'),
-      brand: z.string().describe('The brand of the item.'),
+      brand: z.string().describe('The brand of the item. If not clearly identifiable, this can be an empty string.'),
+      category: z.string().describe('The category of the item (e.g., Food, Drink, Household Supplies). Default to "Uncategorized" if unsure.'),
     })
   ).
 describe('A list of items found on the receipt.'),
@@ -44,7 +44,10 @@ const prompt = ai.definePrompt({
   name: 'scanReceiptPrompt',
   input: {schema: ScanReceiptInputSchema},
   output: {schema: ScanReceiptOutputSchema},
-  prompt: `You are an expert receipt scanner. You will use OCR to extract the items, prices, brand and store from the receipt.  Return a JSON object that contains a list of items, the store name, and the total amount on the receipt.
+  prompt: `You are an expert receipt scanner. You will use OCR to extract the items, prices, brand, and store from the receipt.
+For each item, also determine its category (e.g., Food, Drink, Groceries, Apparel, Electronics, Household Supplies, Personal Care, Services, Other). Provide a general category. If you are unsure of a category for an item, use 'Uncategorized'.
+If a brand is not clearly identifiable for an item, provide an empty string for the brand.
+Return a JSON object that contains a list of items (each with name, price, brand, and category), the store name, and the total amount on the receipt.
 
 Receipt: {{media url=receiptDataUri}}`,
 });

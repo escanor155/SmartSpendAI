@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, AlertCircle, CheckCircle, UploadCloud, X } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle, UploadCloud, X, Sparkles } from "lucide-react";
 import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
 import type { Expense, ScannedItem } from "@/types";
 import { format } from 'date-fns';
 import Image from 'next/image';
 import { useCurrency } from "@/contexts/currency-context";
+import { Badge } from '@/components/ui/badge'; // Added for displaying category
 
 interface ReceiptScanModalProps {
   onReceiptScanned: (expenses: Expense[]) => void;
@@ -73,13 +74,14 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
       id: `scanned-${Date.now()}-${index}`,
       name: item.name,
       price: item.price,
-      category: "Uncategorized", // User can categorize later or AI can suggest
+      category: item.category || "Uncategorized", // Use AI suggested category
       date: today,
       storeName: scanResult.storeName,
       brand: item.brand,
-      receiptImageUrl: previewUrl || undefined, // Storing preview for potential display
+      receiptImageUrl: previewUrl || undefined, 
     }));
     onReceiptScanned(expenses);
+    onOpenChange(false); // Close modal after confirming
   };
   
   const clearSelection = () => {
@@ -89,7 +91,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
     setError(null);
     const fileInput = document.getElementById('receipt-upload') as HTMLInputElement;
     if (fileInput) {
-        fileInput.value = ""; // Reset file input
+        fileInput.value = ""; 
     }
   };
 
@@ -98,7 +100,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
     <DialogContent className="sm:max-w-[600px]">
       <DialogHeader>
         <DialogTitle>Scan Receipt</DialogTitle>
-        <DialogDescription>Upload an image of your receipt to automatically extract expense details.</DialogDescription>
+        <DialogDescription>Upload an image of your receipt to automatically extract expense details and categories.</DialogDescription>
       </DialogHeader>
 
       <div className="space-y-4 py-4">
@@ -143,7 +145,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                <AlertTitle className="text-green-700 dark:text-green-300">Scan Successful!</AlertTitle>
               <AlertDescription className="text-green-600 dark:text-green-400">
-                Review the extracted details below.
+                Review the extracted details below. Categories are AI-suggested.
               </AlertDescription>
             </Alert>
             <div className="max-h-60 overflow-y-auto rounded-md border p-4 space-y-2 text-sm">
@@ -152,7 +154,16 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
               <strong>Items:</strong>
               <ul>
                 {scanResult.items.map((item, index) => (
-                  <li key={index}>- {item.name} ({selectedCurrency.symbol}{item.price.toFixed(2)}) {item.brand && `[${item.brand}]`}</li>
+                  <li key={index} className="flex justify-between items-center">
+                    <span>
+                      - {item.name} ({selectedCurrency.symbol}{item.price.toFixed(2)}) 
+                      {item.brand && ` [${item.brand}]`}
+                    </span>
+                    <Badge variant={item.category === "Uncategorized" ? "outline" : "secondary"} className="ml-2">
+                       {item.category === "Uncategorized" ? null : <Sparkles className="mr-1 h-3 w-3 text-primary" />}
+                       {item.category}
+                    </Badge>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -161,7 +172,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
       </div>
 
       <DialogFooter className="gap-2 sm:gap-0">
-        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <Button variant="outline" onClick={() => { clearSelection(); onOpenChange(false); }}>Cancel</Button>
         {!scanResult && (
           <Button onClick={handleScan} disabled={!selectedFile || isScanning}>
             {isScanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
