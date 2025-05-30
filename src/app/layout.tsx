@@ -1,8 +1,11 @@
+
 import type {Metadata} from 'next';
 import {Geist, Geist_Mono} from 'next/font/google';
 import './globals.css';
 import {ThemeProvider} from '@/components/providers/theme-provider';
 import {Toaster} from '@/components/ui/toaster';
+import { AuthProvider } from '@/contexts/auth-context'; // Import AuthProvider
+import { CurrencyProvider } from "@/contexts/currency-context"; // CurrencyProvider needs to be inside AuthProvider or vice-versa. Let's keep AuthProvider outer.
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -33,8 +36,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
+          <AuthProvider> {/* Wrap with AuthProvider */}
+            <CurrencyProvider> {/* CurrencyProvider can be inside AuthProvider */}
+              {children}
+              <Toaster />
+            </CurrencyProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
