@@ -56,7 +56,15 @@ const scanReceiptFlow = ai.defineFlow(
     outputSchema: ScanReceiptOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    const result = await prompt(input);
+    const output = result.output;
+    if (!output) {
+      console.error(`Flow for prompt '${prompt.name}' failed to produce an output. Input:`, input, "Full result:", result);
+      if (result.error) {
+        console.error("Underlying error from Genkit/LLM:", result.error);
+      }
+      throw new Error(`AI flow for prompt '${prompt.name}' did not return the expected output. Check server logs for details.`);
+    }
+    return output;
   }
 );
