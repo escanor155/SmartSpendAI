@@ -4,7 +4,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2 } from "lucide-react";
+import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3 } from "lucide-react";
 import Image from "next/image";
 
 // Sample data for charts - replace with actual data fetching and chart components
