@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { PlusCircle, Trash2, Sparkles, Loader2, ShoppingCart } from "lucide-react";
 import type { ShoppingListItem } from "@/types";
 import { suggestShoppingListItems, type SuggestShoppingListItemsInput } from "@/ai/flows/suggest-shopping-list-items";
+import { cn } from "@/lib/utils";
 
 // Mock past purchases - in a real app, this would come from user's expense history
 const mockPastPurchases = "milk, eggs, bread, chicken, apples, bananas, cheese, pasta, rice, coffee";
