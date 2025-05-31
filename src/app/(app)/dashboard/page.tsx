@@ -23,8 +23,8 @@ const chartColors = [
   "hsl(var(--chart-3))",
   "hsl(var(--chart-4))",
   "hsl(var(--chart-5))",
-  "hsl(var(--chart-6, 262 80% 50%))", // Added a fallback for chart-6 if not in theme
-  "hsl(var(--chart-7, 320 75% 55%))", // Added a fallback for chart-7
+  "hsl(var(--chart-6, 262 80% 50%))", 
+  "hsl(var(--chart-7, 320 75% 55%))", 
 ];
 
 const processExpensesForCategoryChart = (expenses: Expense[]) => {
@@ -34,8 +34,6 @@ const processExpensesForCategoryChart = (expenses: Expense[]) => {
   const lastDayCurrentMonth = endOfMonth(now);
 
   expenses.forEach(expense => {
-    // Ensure expense.date is treated as a Date object. Firestore timestamps might need conversion.
-    // Assuming expense.date is "YYYY-MM-DD" string
     const expenseDate = parseISO(expense.date); 
     
     if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
@@ -69,7 +67,6 @@ export default function DashboardPage() {
 
     setIsLoadingExpenses(true);
     const expensesCol = collection(db, "expenses");
-    // Querying all expenses for the user, filtering for current month will happen in processExpensesForCategoryChart
     const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -126,8 +123,8 @@ export default function DashboardPage() {
             <CalendarClock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold text-muted-foreground">Feature coming soon</div>
-            <p className="text-xs text-muted-foreground">Get reminders for your bills.</p>
+            <div className="text-lg font-semibold text-muted-foreground">No upcoming bills to display</div>
+            <p className="text-xs text-muted-foreground">Get reminders for your bills when data is available.</p>
           </CardContent>
         </Card>
 
@@ -225,7 +222,6 @@ export default function DashboardPage() {
                           <Cell key={`cell-${entry.name}`} fill={entry.fill} />
                         ))}
                       </Pie>
-                      {/* <Legend content={<ChartLegendContent nameKey="name" />} /> */}
                     </PieChart>
                   </ResponsiveContainer>
                 </ChartContainer>
