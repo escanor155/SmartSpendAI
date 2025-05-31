@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3, Info, CalendarClock, Loader2, Edit3, Save, X, PiggyBank, Wallet } from "lucide-react";
+import { AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3, Info, CalendarClock, Loader2, Edit3, Save, X, PiggyBank, Wallet } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
 import { useAuth } from "@/contexts/auth-context";
 import { db } from "@/lib/firebase";
@@ -24,8 +24,8 @@ const chartColors = [
   "hsl(var(--chart-3))",
   "hsl(var(--chart-4))",
   "hsl(var(--chart-5))",
-  "hsl(var(--chart-6, 262 80% 50%))", 
-  "hsl(var(--chart-7, 320 75% 55%))", 
+  "hsl(var(--chart-6, 262 80% 50%))",
+  "hsl(var(--chart-7, 320 75% 55%))",
 ];
 
 const processExpensesForCategoryChart = (expenses: Expense[]) => {
@@ -35,15 +35,24 @@ const processExpensesForCategoryChart = (expenses: Expense[]) => {
   const lastDayCurrentMonth = endOfMonth(now);
 
   expenses.forEach(expense => {
-    const expenseDate = parseISO(expense.date); 
-    if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
-      categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.price;
+    // Ensure expense.date is a valid string before parsing
+    if (typeof expense.date === 'string') {
+      try {
+        const expenseDate = parseISO(expense.date);
+        if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
+          categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.price;
+        }
+      } catch (e) {
+        console.warn(`Skipping expense with invalid date format: ${expense.date}`, expense);
+      }
+    } else {
+        console.warn('Skipping expense with undefined or non-string date', expense);
     }
   });
-  return Object.entries(categoryTotals).map(([name, value], index) => ({ 
-    name, 
-    value, 
-    fill: chartColors[index % chartColors.length] 
+  return Object.entries(categoryTotals).map(([name, value], index) => ({
+    name,
+    value,
+    fill: chartColors[index % chartColors.length]
   }));
 };
 
@@ -53,10 +62,16 @@ const calculateCurrentMonthTotalExpenses = (expenses: Expense[]): number => {
   const lastDayCurrentMonth = endOfMonth(now);
   let total = 0;
   expenses.forEach(expense => {
-    const expenseDate = parseISO(expense.date);
-    if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
-      total += expense.price;
-    }
+     if (typeof expense.date === 'string') {
+        try {
+            const expenseDate = parseISO(expense.date);
+            if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
+                total += expense.price;
+            }
+        } catch (e) {
+            // console.warn(`Skipping expense in total calculation due to invalid date: ${expense.date}`, expense);
+        }
+     }
   });
   return total;
 };
@@ -70,14 +85,13 @@ export default function DashboardPage() {
   const [userExpenses, setUserExpenses] = useState<Expense[]>([]);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
   const [expensesByCategory, setExpensesByCategory] = useState<ReturnType<typeof processExpensesForCategoryChart>>([]);
-  const [currentMonthTotalExpenses, setCurrentMonthTotalExpenses] = useState(0);
+  const [currentMonthTotalExpenses, setCurrentMonthTotalExpenses] = useState<number | null>(null); // Initialize to null
 
   const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
   const [isLoadingBudget, setIsLoadingBudget] = useState(true);
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [newBudgetAmount, setNewBudgetAmount] = useState<string>("");
 
-  // Fetch user preferences (monthly budget)
   const fetchUserPreferences = useCallback(async () => {
     if (!user) return;
     setIsLoadingBudget(true);
@@ -85,16 +99,17 @@ export default function DashboardPage() {
       const prefRef = doc(db, "userPreferences", user.uid);
       const docSnap = await getDoc(prefRef);
       if (docSnap.exists() && docSnap.data().monthlyBudget !== undefined) {
-        setMonthlyBudget(docSnap.data().monthlyBudget);
-        setNewBudgetAmount(docSnap.data().monthlyBudget.toString());
+        const budget = parseFloat(docSnap.data().monthlyBudget);
+        setMonthlyBudget(budget);
+        setNewBudgetAmount(budget.toString());
       } else {
-        setMonthlyBudget(0); // Default if not set
+        setMonthlyBudget(0); 
         setNewBudgetAmount("0");
       }
     } catch (error) {
       console.error("Error fetching user preferences:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not fetch budget." });
-      setMonthlyBudget(0); // Default on error
+      setMonthlyBudget(0); 
       setNewBudgetAmount("0");
     } finally {
       setIsLoadingBudget(false);
@@ -110,7 +125,6 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, fetchUserPreferences]);
 
-  // Save monthly budget
   const handleSaveBudget = async () => {
     if (!user) return;
     const budgetVal = parseFloat(newBudgetAmount);
@@ -118,7 +132,7 @@ export default function DashboardPage() {
       toast({ variant: "destructive", title: "Invalid Amount", description: "Please enter a valid budget amount." });
       return;
     }
-    setIsLoadingBudget(true);
+    setIsLoadingBudget(true); // Can use a different loader state if desired for saving
     try {
       const prefRef = doc(db, "userPreferences", user.uid);
       await setDoc(prefRef, { monthlyBudget: budgetVal }, { merge: true });
@@ -133,7 +147,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Fetch expenses
   useEffect(() => {
     if (!user && !authLoading) {
       setUserExpenses([]);
@@ -162,23 +175,27 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [user, authLoading, toast]);
 
-  // Process expenses for charts and totals
   useEffect(() => {
-    if (userExpenses.length > 0) {
-      setExpensesByCategory(processExpensesForCategoryChart(userExpenses));
-      setCurrentMonthTotalExpenses(calculateCurrentMonthTotalExpenses(userExpenses));
-    } else {
-      setExpensesByCategory([]);
-      setCurrentMonthTotalExpenses(0);
+    if (isLoadingExpenses) {
+      setCurrentMonthTotalExpenses(null); 
+      setExpensesByCategory([]); 
+      return;
     }
-  }, [userExpenses]);
+    
+    const processedCategoryData = processExpensesForCategoryChart(userExpenses);
+    const totalForMonth = calculateCurrentMonthTotalExpenses(userExpenses);
+    
+    setExpensesByCategory(processedCategoryData);
+    setCurrentMonthTotalExpenses(totalForMonth);
+
+  }, [userExpenses, isLoadingExpenses]);
 
   const categoryChartConfig = expensesByCategory.reduce((acc, item) => {
     acc[item.name] = { label: item.name, color: item.fill };
     return acc;
   }, {} as ChartConfig);
 
-  const remainingBalance = monthlyBudget !== null ? monthlyBudget - currentMonthTotalExpenses : null;
+  const remainingBalance = monthlyBudget !== null && currentMonthTotalExpenses !== null ? monthlyBudget - currentMonthTotalExpenses : null;
 
   return (
     <>
@@ -244,22 +261,22 @@ export default function DashboardPage() {
           <CardContent>
              {isLoadingBudget || isLoadingExpenses || authLoading ? (
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            ) : user && monthlyBudget !== null && remainingBalance !== null ? (
+            ) : !user ? (
+                 <p className="text-muted-foreground">Log in to view balance.</p>
+            ) : monthlyBudget === null ? (
+                <p className="text-muted-foreground">Set a budget to see remaining balance.</p>
+            ) : currentMonthTotalExpenses === null ? (
+                 <p className="text-muted-foreground">Calculating balance...</p>
+            ) : remainingBalance !== null ? (
                 <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                     {selectedCurrency.symbol}{remainingBalance.toFixed(2)}
                 </div>
-            ) : user && monthlyBudget === null ? (
-                <p className="text-muted-foreground">Set a budget to see remaining balance.</p>
-            ) : user && remainingBalance === null ? (
-                 <p className="text-muted-foreground">Calculating...</p>
-            ) : !user ? (
-                 <p className="text-muted-foreground">Log in to view balance.</p>
             ) : (
-                 <p className="text-muted-foreground">No data to display.</p>
+                 <p className="text-muted-foreground">Unable to display balance details.</p>
             )
             }
             <p className="text-xs text-muted-foreground mt-1">
-                {monthlyBudget !== null ? `Based on your ${selectedCurrency.symbol}${monthlyBudget.toFixed(2)} budget.` : "Set a budget to track."}
+                {monthlyBudget !== null && currentMonthTotalExpenses !== null ? `Based on your ${selectedCurrency.symbol}${monthlyBudget.toFixed(2)} budget.` : "Set a budget to track."}
             </p>
           </CardContent>
         </Card>
@@ -316,7 +333,7 @@ export default function DashboardPage() {
             <CardDescription>Your expenses by category this month.</CardDescription>
           </CardHeader>
           <CardContent className="min-h-[250px] flex flex-col justify-center items-center">
-            {authLoading || isLoadingExpenses ? (
+            {authLoading || isLoadingExpenses || isLoadingBudget ? ( // Added isLoadingBudget here too for consistency
               <div className="flex flex-col items-center justify-center text-muted-foreground">
                 <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
                 <p className="mt-2">Loading spending summary...</p>
@@ -334,8 +351,8 @@ export default function DashboardPage() {
                 <ChartContainer config={categoryChartConfig} className="w-full h-[200px] sm:h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <ChartTooltipContent 
-                        hideLabel 
+                      <ChartTooltipContent
+                        hideLabel
                         nameKey="name"
                         formatter={(value, name, item) => {
                           const itemPayload = item.payload;
@@ -372,3 +389,5 @@ export default function DashboardPage() {
     </>
   );
 }
+
+    
