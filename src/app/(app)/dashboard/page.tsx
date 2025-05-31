@@ -35,7 +35,6 @@ const processExpensesForCategoryChart = (expenses: Expense[]) => {
   const lastDayCurrentMonth = endOfMonth(now);
 
   expenses.forEach(expense => {
-    // Ensure expense.date is a valid string before parsing
     if (typeof expense.date === 'string') {
       try {
         const expenseDate = parseISO(expense.date);
@@ -84,8 +83,10 @@ export default function DashboardPage() {
 
   const [userExpenses, setUserExpenses] = useState<Expense[]>([]);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
+  const [effectiveExpenses, setEffectiveExpenses] = useState<Expense[] | null>(null);
+
   const [expensesByCategory, setExpensesByCategory] = useState<ReturnType<typeof processExpensesForCategoryChart>>([]);
-  const [currentMonthTotalExpenses, setCurrentMonthTotalExpenses] = useState<number | null>(null); // Initialize to null
+  const [currentMonthTotalExpenses, setCurrentMonthTotalExpenses] = useState<number | null>(null);
 
   const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
   const [isLoadingBudget, setIsLoadingBudget] = useState(true);
@@ -132,7 +133,7 @@ export default function DashboardPage() {
       toast({ variant: "destructive", title: "Invalid Amount", description: "Please enter a valid budget amount." });
       return;
     }
-    setIsLoadingBudget(true); // Can use a different loader state if desired for saving
+    // No need to set isLoadingBudget here, use a different state if desired for save operation
     try {
       const prefRef = doc(db, "userPreferences", user.uid);
       await setDoc(prefRef, { monthlyBudget: budgetVal }, { merge: true });
@@ -142,8 +143,6 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error saving budget:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not save budget." });
-    } finally {
-      setIsLoadingBudget(false);
     }
   };
 
@@ -151,11 +150,13 @@ export default function DashboardPage() {
     if (!user && !authLoading) {
       setUserExpenses([]);
       setIsLoadingExpenses(false);
+      setEffectiveExpenses([]); // Also clear effective expenses
       return;
     }
     if (!user) return;
 
     setIsLoadingExpenses(true);
+    setEffectiveExpenses(null); // Reset effective expenses when user changes or starts loading
     const expensesCol = collection(db, "expenses");
     const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"));
 
@@ -165,37 +166,64 @@ export default function DashboardPage() {
         ...doc.data(),
       } as Expense));
       setUserExpenses(fetchedExpenses);
-      setIsLoadingExpenses(false);
+      setIsLoadingExpenses(false); // This will trigger the effect below
     }, (error) => {
       console.error("Error fetching expenses for dashboard:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not fetch expense data for dashboard." });
       setIsLoadingExpenses(false);
+      setEffectiveExpenses([]); // Ensure effectiveExpenses is not null on error
     });
 
     return () => unsubscribe();
   }, [user, authLoading, toast]);
 
+  // Effect to create a slightly delayed "effectiveExpenses"
   useEffect(() => {
-    if (isLoadingExpenses) {
-      setCurrentMonthTotalExpenses(null); 
-      setExpensesByCategory([]); 
+    if (authLoading) { // If auth is still loading, don't process
+      setEffectiveExpenses(null);
+      return;
+    }
+    if (isLoadingExpenses) { // If expenses are still in primary loading phase
+      setEffectiveExpenses(null);
+      return;
+    }
+    // At this point, isLoadingExpenses is false.
+    // Use a timeout to defer setting effectiveExpenses by one event loop cycle.
+    // This gives userExpenses from onSnapshot a chance to be the most current.
+    const timer = setTimeout(() => {
+      setEffectiveExpenses(userExpenses);
+    }, 0);
+
+    return () => clearTimeout(timer); // Cleanup the timer
+  }, [userExpenses, isLoadingExpenses, authLoading]);
+
+
+  // Effect to calculate totals based on "effectiveExpenses"
+  useEffect(() => {
+    // If auth is loading or effectiveExpenses is not yet ready (still null)
+    if (authLoading || effectiveExpenses === null) {
+      setCurrentMonthTotalExpenses(null);
+      setExpensesByCategory([]);
       return;
     }
     
-    const processedCategoryData = processExpensesForCategoryChart(userExpenses);
-    const totalForMonth = calculateCurrentMonthTotalExpenses(userExpenses);
+    const processedCategoryData = processExpensesForCategoryChart(effectiveExpenses);
+    const totalForMonth = calculateCurrentMonthTotalExpenses(effectiveExpenses);
     
     setExpensesByCategory(processedCategoryData);
     setCurrentMonthTotalExpenses(totalForMonth);
 
-  }, [userExpenses, isLoadingExpenses]);
+  }, [effectiveExpenses, authLoading]); // Depend on effectiveExpenses
 
   const categoryChartConfig = expensesByCategory.reduce((acc, item) => {
     acc[item.name] = { label: item.name, color: item.fill };
     return acc;
   }, {} as ChartConfig);
 
-  const remainingBalance = monthlyBudget !== null && currentMonthTotalExpenses !== null ? monthlyBudget - currentMonthTotalExpenses : null;
+  // Remaining balance calculation is now implicitly correct if currentMonthTotalExpenses is correct
+  const remainingBalance = monthlyBudget !== null && currentMonthTotalExpenses !== null 
+    ? monthlyBudget - currentMonthTotalExpenses 
+    : null;
 
   return (
     <>
@@ -210,7 +238,9 @@ export default function DashboardPage() {
             <PiggyBank className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {isLoadingBudget || authLoading ? (
+            {authLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            ) : isLoadingBudget ? ( // Specifically for budget loading after auth
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             ) : user && monthlyBudget !== null ? (
               isEditingBudget ? (
@@ -259,24 +289,28 @@ export default function DashboardPage() {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-             {isLoadingBudget || isLoadingExpenses || authLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            ) : !user ? (
+             {authLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+             ) : !user ? (
                  <p className="text-muted-foreground">Log in to view balance.</p>
-            ) : monthlyBudget === null ? (
+             ) : isLoadingBudget ? ( // Budget still loading
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+             ) : monthlyBudget === null ? ( // Budget not set
                 <p className="text-muted-foreground">Set a budget to see remaining balance.</p>
-            ) : currentMonthTotalExpenses === null ? (
-                 <p className="text-muted-foreground">Calculating balance...</p>
-            ) : remainingBalance !== null ? (
+             ) : effectiveExpenses === null ? ( // Expenses (and thus total) not yet processed/settled
+                <p className="text-muted-foreground">Calculating balance...</p>
+             ) : currentMonthTotalExpenses !== null && remainingBalance !== null ? ( // All data available
                 <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                     {selectedCurrency.symbol}{remainingBalance.toFixed(2)}
                 </div>
-            ) : (
-                 <p className="text-muted-foreground">Unable to display balance details.</p>
-            )
-            }
+             ) : ( // Fallback, should ideally not be hit frequently if logic is tight
+                 <p className="text-muted-foreground">Processing balance details...</p>
+             )}
             <p className="text-xs text-muted-foreground mt-1">
-                {monthlyBudget !== null && currentMonthTotalExpenses !== null ? `Based on your ${selectedCurrency.symbol}${monthlyBudget.toFixed(2)} budget.` : "Set a budget to track."}
+                {monthlyBudget !== null && currentMonthTotalExpenses !== null && effectiveExpenses !== null
+                    ? `Based on your ${selectedCurrency.symbol}${monthlyBudget.toFixed(2)} budget.` 
+                    : monthlyBudget !== null ? "Processing expenses..."
+                    : "Set a budget to track."}
             </p>
           </CardContent>
         </Card>
@@ -333,7 +367,7 @@ export default function DashboardPage() {
             <CardDescription>Your expenses by category this month.</CardDescription>
           </CardHeader>
           <CardContent className="min-h-[250px] flex flex-col justify-center items-center">
-            {authLoading || isLoadingExpenses || isLoadingBudget ? ( // Added isLoadingBudget here too for consistency
+            {authLoading || effectiveExpenses === null ? ( 
               <div className="flex flex-col items-center justify-center text-muted-foreground">
                 <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
                 <p className="mt-2">Loading spending summary...</p>
@@ -389,5 +423,3 @@ export default function DashboardPage() {
     </>
   );
 }
-
-    
