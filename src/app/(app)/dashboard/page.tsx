@@ -4,14 +4,15 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3, Info, CalendarClock, Loader2 } from "lucide-react";
+import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3, Info, CalendarClock, Loader2, Edit3, Save, X, PiggyBank, Wallet } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
 import { useAuth } from "@/contexts/auth-context";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from "firebase/firestore";
 import type { Expense } from "@/types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +36,6 @@ const processExpensesForCategoryChart = (expenses: Expense[]) => {
 
   expenses.forEach(expense => {
     const expenseDate = parseISO(expense.date); 
-    
     if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
       categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.price;
     }
@@ -47,6 +47,20 @@ const processExpensesForCategoryChart = (expenses: Expense[]) => {
   }));
 };
 
+const calculateCurrentMonthTotalExpenses = (expenses: Expense[]): number => {
+  const now = new Date();
+  const firstDayCurrentMonth = startOfMonth(now);
+  const lastDayCurrentMonth = endOfMonth(now);
+  let total = 0;
+  expenses.forEach(expense => {
+    const expenseDate = parseISO(expense.date);
+    if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
+      total += expense.price;
+    }
+  });
+  return total;
+};
+
 
 export default function DashboardPage() {
   const { selectedCurrency } = useCurrency();
@@ -56,7 +70,70 @@ export default function DashboardPage() {
   const [userExpenses, setUserExpenses] = useState<Expense[]>([]);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
   const [expensesByCategory, setExpensesByCategory] = useState<ReturnType<typeof processExpensesForCategoryChart>>([]);
+  const [currentMonthTotalExpenses, setCurrentMonthTotalExpenses] = useState(0);
 
+  const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
+  const [isLoadingBudget, setIsLoadingBudget] = useState(true);
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [newBudgetAmount, setNewBudgetAmount] = useState<string>("");
+
+  // Fetch user preferences (monthly budget)
+  const fetchUserPreferences = useCallback(async () => {
+    if (!user) return;
+    setIsLoadingBudget(true);
+    try {
+      const prefRef = doc(db, "userPreferences", user.uid);
+      const docSnap = await getDoc(prefRef);
+      if (docSnap.exists() && docSnap.data().monthlyBudget !== undefined) {
+        setMonthlyBudget(docSnap.data().monthlyBudget);
+        setNewBudgetAmount(docSnap.data().monthlyBudget.toString());
+      } else {
+        setMonthlyBudget(0); // Default if not set
+        setNewBudgetAmount("0");
+      }
+    } catch (error) {
+      console.error("Error fetching user preferences:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch budget." });
+      setMonthlyBudget(0); // Default on error
+      setNewBudgetAmount("0");
+    } finally {
+      setIsLoadingBudget(false);
+    }
+  }, [user, toast]);
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      fetchUserPreferences();
+    } else if (!user && !authLoading) {
+      setIsLoadingBudget(false);
+      setMonthlyBudget(null);
+    }
+  }, [user, authLoading, fetchUserPreferences]);
+
+  // Save monthly budget
+  const handleSaveBudget = async () => {
+    if (!user) return;
+    const budgetVal = parseFloat(newBudgetAmount);
+    if (isNaN(budgetVal) || budgetVal < 0) {
+      toast({ variant: "destructive", title: "Invalid Amount", description: "Please enter a valid budget amount." });
+      return;
+    }
+    setIsLoadingBudget(true);
+    try {
+      const prefRef = doc(db, "userPreferences", user.uid);
+      await setDoc(prefRef, { monthlyBudget: budgetVal }, { merge: true });
+      setMonthlyBudget(budgetVal);
+      setIsEditingBudget(false);
+      toast({ title: "Success", description: "Monthly budget updated." });
+    } catch (error) {
+      console.error("Error saving budget:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not save budget." });
+    } finally {
+      setIsLoadingBudget(false);
+    }
+  };
+
+  // Fetch expenses
   useEffect(() => {
     if (!user && !authLoading) {
       setUserExpenses([]);
@@ -85,11 +162,14 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [user, authLoading, toast]);
 
+  // Process expenses for charts and totals
   useEffect(() => {
     if (userExpenses.length > 0) {
       setExpensesByCategory(processExpensesForCategoryChart(userExpenses));
+      setCurrentMonthTotalExpenses(calculateCurrentMonthTotalExpenses(userExpenses));
     } else {
       setExpensesByCategory([]);
+      setCurrentMonthTotalExpenses(0);
     }
   }, [userExpenses]);
 
@@ -98,6 +178,7 @@ export default function DashboardPage() {
     return acc;
   }, {} as ChartConfig);
 
+  const remainingBalance = monthlyBudget !== null ? monthlyBudget - currentMonthTotalExpenses : null;
 
   return (
     <>
@@ -108,23 +189,78 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Balance</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Monthly Budget</CardTitle>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold text-muted-foreground">Feature coming soon</div>
-            <p className="text-xs text-muted-foreground">Track your overall net worth.</p>
+            {isLoadingBudget || authLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            ) : user && monthlyBudget !== null ? (
+              isEditingBudget ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={newBudgetAmount}
+                    onChange={(e) => setNewBudgetAmount(e.target.value)}
+                    placeholder="Enter budget"
+                    className="h-9 text-lg"
+                  />
+                  <Button onClick={handleSaveBudget} size="icon" variant="ghost" className="h-9 w-9">
+                    <Save className="h-5 w-5 text-green-500" />
+                  </Button>
+                  <Button onClick={() => { setIsEditingBudget(false); setNewBudgetAmount(monthlyBudget.toString()); }} size="icon" variant="ghost" className="h-9 w-9">
+                    <X className="h-5 w-5 text-red-500" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="text-2xl font-bold">
+                    {selectedCurrency.symbol}{monthlyBudget.toFixed(2)}
+                  </div>
+                  <Button onClick={() => setIsEditingBudget(true)} size="icon" variant="ghost">
+                    <Edit3 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )
+            ) : user ? (
+                 <div className="flex items-center justify-between">
+                    <p className="text-muted-foreground">Set your budget</p>
+                     <Button onClick={() => setIsEditingBudget(true)} size="sm" variant="outline">
+                        Set Budget
+                    </Button>
+                 </div>
+            ) : (
+                <p className="text-muted-foreground">Log in to set a budget.</p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">Your target spending for the month.</p>
           </CardContent>
         </Card>
 
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming Bills</CardTitle>
-            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Remaining Balance</CardTitle>
+            <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold text-muted-foreground">No upcoming bills to display</div>
-            <p className="text-xs text-muted-foreground">Get reminders for your bills when data is available.</p>
+             {isLoadingBudget || isLoadingExpenses || authLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            ) : user && monthlyBudget !== null && remainingBalance !== null ? (
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    {selectedCurrency.symbol}{remainingBalance.toFixed(2)}
+                </div>
+            ) : user && monthlyBudget === null ? (
+                <p className="text-muted-foreground">Set a budget to see remaining balance.</p>
+            ) : user && remainingBalance === null ? (
+                 <p className="text-muted-foreground">Calculating...</p>
+            ) : !user ? (
+                 <p className="text-muted-foreground">Log in to view balance.</p>
+            ) : (
+                 <p className="text-muted-foreground">No data to display.</p>
+            )
+            }
+            <p className="text-xs text-muted-foreground mt-1">
+                {monthlyBudget !== null ? `Based on your ${selectedCurrency.symbol}${monthlyBudget.toFixed(2)} budget.` : "Set a budget to track."}
+            </p>
           </CardContent>
         </Card>
 
@@ -135,7 +271,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-semibold text-muted-foreground">No active alerts</div>
-            <p className="text-xs text-muted-foreground">Budget alerts will show here.</p>
+            <p className="text-xs text-muted-foreground">Budget alerts will show here when implemented.</p>
           </CardContent>
         </Card>
       </div>
@@ -236,4 +372,3 @@ export default function DashboardPage() {
     </>
   );
 }
-
