@@ -1,29 +1,32 @@
+
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useCallback } from "react";
 import { useSearchParams } from 'next/navigation';
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, ReceiptText } from "lucide-react";
+import { PlusCircle, ReceiptText, Loader2 } from "lucide-react";
 import type { Expense } from "@/types";
 import { ExpenseForm } from "@/components/features/expenses/expense-form";
 import { ExpenseTable } from "@/components/features/expenses/expense-table";
 import { ReceiptScanModal } from "@/components/features/expenses/receipt-scan-modal";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-
-// Mock data for expenses - replace with actual data fetching
-const mockExpenses: Expense[] = [
-  { id: "1", name: "Groceries", price: 75.50, category: "Food", date: "2024-07-12", storeName: "SuperMart" },
-  { id: "2", name: "Gasoline", price: 45.00, category: "Transportation", date: "2024-07-10", storeName: "Gas Station" },
-  { id: "3", name: "Dinner Out", price: 60.25, category: "Dining", date: "2024-07-08", storeName: "The Italian Place" },
-  { id: "4", name: "Coffee", price: 4.75, category: "Food", date: "2024-07-15", storeName: "Cafe Express" },
-];
-
+import { useAuth } from "@/contexts/auth-context";
+import { db } from "@/lib/firebase";
+import { 
+  collection, query, where, orderBy, onSnapshot, 
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp 
+} from "firebase/firestore";
+import { useToast } from "@/hooks/use-toast";
 
 function ExpensesContent() {
   const searchParams = useSearchParams();
-  const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
+  const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
+
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -38,18 +41,77 @@ function ExpensesContent() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!user) {
+      if (!authLoading) { // Only set loading to false if auth is resolved and there's no user
+        setExpenses([]);
+        setIsLoadingExpenses(false);
+      }
+      return;
+    }
 
-  const handleAddExpense = (newExpense: Omit<Expense, 'id'>) => {
-    const expenseWithId = { ...newExpense, id: Date.now().toString() };
-    setExpenses(prev => [expenseWithId, ...prev]);
-    setShowExpenseForm(false);
-    setEditingExpense(null);
+    setIsLoadingExpenses(true);
+    const expensesCol = collection(db, "expenses");
+    const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"), orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const userExpenses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      } as Expense));
+      setExpenses(userExpenses);
+      setIsLoadingExpenses(false);
+    }, (error) => {
+      console.error("Error fetching expenses:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch expenses." });
+      setIsLoadingExpenses(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, authLoading, toast]);
+
+
+  const handleAddExpense = async (newExpenseData: Omit<Expense, 'id' | 'userId' | 'createdAt'>) => {
+    if (!user) {
+      toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to add expenses." });
+      return;
+    }
+    try {
+      await addDoc(collection(db, "expenses"), {
+        ...newExpenseData,
+        userId: user.uid,
+        createdAt: serverTimestamp() 
+      });
+      toast({ title: "Success", description: "Expense added successfully." });
+      setShowExpenseForm(false);
+      setEditingExpense(null);
+    } catch (error) {
+      console.error("Error adding expense:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not add expense." });
+    }
   };
 
-  const handleUpdateExpense = (updatedExpense: Expense) => {
-    setExpenses(prev => prev.map(exp => exp.id === updatedExpense.id ? updatedExpense : exp));
-    setShowExpenseForm(false);
-    setEditingExpense(null);
+  const handleUpdateExpense = async (updatedExpense: Expense) => {
+     if (!user) {
+      toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to update expenses." });
+      return;
+    }
+    if (updatedExpense.userId !== user.uid) {
+      toast({ variant: "destructive", title: "Authorization Error", description: "You cannot update this expense."});
+      return;
+    }
+    try {
+      const expenseRef = doc(db, "expenses", updatedExpense.id);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, userId, ...dataToUpdate } = updatedExpense; // Exclude id and userId from data payload
+      await updateDoc(expenseRef, dataToUpdate);
+      toast({ title: "Success", description: "Expense updated successfully." });
+      setShowExpenseForm(false);
+      setEditingExpense(null);
+    } catch (error) {
+      console.error("Error updating expense:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not update expense." });
+    }
   };
 
   const handleEditExpense = (expense: Expense) => {
@@ -57,19 +119,25 @@ function ExpensesContent() {
     setShowExpenseForm(true);
   };
 
-  const handleDeleteExpense = (expenseId: string) => {
-    setExpenses(prev => prev.filter(exp => exp.id !== expenseId));
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!user) {
+      toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to delete expenses." });
+      return;
+    }
+    // Optional: Fetch the expense to verify userId before deleting, or rely on security rules
+    try {
+      await deleteDoc(doc(db, "expenses", expenseId));
+      toast({ title: "Success", description: "Expense deleted successfully." });
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not delete expense." });
+    }
   };
 
   const handleToggleForm = () => {
     setShowExpenseForm(prev => !prev);
-    if (showExpenseForm) setEditingExpense(null); // Clear editing state if closing form
+    if (showExpenseForm) setEditingExpense(null);
   }
-
-  const handleReceiptScanned = (scannedData: Expense[]) => {
-    setExpenses(prev => [...scannedData, ...prev]);
-    setIsReceiptModalOpen(false);
-  };
 
   return (
     <>
@@ -85,7 +153,8 @@ function ExpensesContent() {
                   Scan Receipt
                 </Button>
               </DialogTrigger>
-              <ReceiptScanModal onReceiptScanned={handleReceiptScanned} onOpenChange={setIsReceiptModalOpen} />
+              {/* ReceiptScanModal will now directly save to Firestore */}
+              <ReceiptScanModal onOpenChange={setIsReceiptModalOpen} />
             </Dialog>
             <Button onClick={handleToggleForm}>
               <PlusCircle className="mr-2 h-4 w-4" />
@@ -118,21 +187,27 @@ function ExpensesContent() {
           <CardDescription>A list of your recent expenses.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ExpenseTable
-            expenses={expenses}
-            onEdit={handleEditExpense}
-            onDelete={handleDeleteExpense}
-          />
+          {authLoading || isLoadingExpenses ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+              <span>Loading expenses...</span>
+            </div>
+          ) : (
+            <ExpenseTable
+              expenses={expenses}
+              onEdit={handleEditExpense}
+              onDelete={handleDeleteExpense}
+            />
+          )}
         </CardContent>
       </Card>
     </>
   );
 }
 
-
 export default function ExpensesPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="mr-2 h-8 w-8 animate-spin" /> Loading expenses page...</div>}>
       <ExpensesContent />
     </Suspense>
   );

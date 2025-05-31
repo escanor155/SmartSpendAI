@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,24 +9,29 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle, UploadCloud, X, Sparkles } from "lucide-react";
 import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
-import type { Expense, ScannedItem } from "@/types";
+import type { ScannedItem } from "@/types"; // Expense type removed, direct save
 import { format } from 'date-fns';
 import Image from 'next/image';
 import { useCurrency } from "@/contexts/currency-context";
-import { Badge } from '@/components/ui/badge'; // Added for displaying category
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/contexts/auth-context';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface ReceiptScanModalProps {
-  onReceiptScanned: (expenses: Expense[]) => void;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScanModalProps) {
+export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanReceiptOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { selectedCurrency } = useCurrency();
+  const { user } = useAuth();
+  const { toast } = useToast();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -61,27 +66,44 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
     } catch (err) {
       console.error("Error scanning receipt:", err);
       setError("Failed to scan receipt. Please try again or enter manually.");
+      toast({ variant: "destructive", title: "Scan Error", description: "The AI failed to process the receipt image."});
     } finally {
       setIsScanning(false);
     }
   };
 
-  const handleConfirmScan = () => {
-    if (!scanResult) return;
+  const handleConfirmScan = async () => {
+    if (!scanResult || !user) {
+      if (!user) {
+        toast({ variant: "destructive", title: "Not Authenticated", description: "You need to be logged in to save expenses."});
+      }
+      return;
+    }
 
     const today = format(new Date(), 'yyyy-MM-dd');
-    const expenses: Expense[] = scanResult.items.map((item: ScannedItem, index: number) => ({
-      id: `scanned-${Date.now()}-${index}`,
+    const expensesToSave = scanResult.items.map((item: ScannedItem) => ({
+      userId: user.uid,
       name: item.name,
       price: item.price,
-      category: item.category || "Uncategorized", // Use AI suggested category
+      category: item.category || "Uncategorized",
       date: today,
       storeName: scanResult.storeName,
-      brand: item.brand,
+      brand: item.brand || '', // Ensure brand is not undefined
       receiptImageUrl: previewUrl || undefined, 
+      createdAt: serverTimestamp()
     }));
-    onReceiptScanned(expenses);
-    onOpenChange(false); // Close modal after confirming
+
+    try {
+      const expensesCollectionRef = collection(db, "expenses");
+      for (const expense of expensesToSave) {
+        await addDoc(expensesCollectionRef, expense);
+      }
+      toast({ title: "Success", description: `${expensesToSave.length} expenses added from receipt.`});
+      onOpenChange(false); // Close modal after confirming
+    } catch (e) {
+        console.error("Error saving scanned expenses:", e);
+        toast({variant: "destructive", title: "Database Error", description: "Could not save scanned expenses."});
+    }
   };
   
   const clearSelection = () => {
@@ -94,7 +116,6 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
         fileInput.value = ""; 
     }
   };
-
 
   return (
     <DialogContent className="sm:max-w-[600px]">
@@ -131,7 +152,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
           </div>
         )}
 
-        {error && (
+        {error && !isScanning && ( // Only show manual error if not currently scanning
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Scan Error</AlertTitle>
@@ -180,7 +201,7 @@ export function ReceiptScanModal({ onReceiptScanned, onOpenChange }: ReceiptScan
           </Button>
         )}
         {scanResult && (
-          <Button onClick={handleConfirmScan} className="bg-primary hover:bg-primary/80">
+          <Button onClick={handleConfirmScan} className="bg-primary hover:bg-primary/80" disabled={!user}>
             <CheckCircle className="mr-2 h-4 w-4" />
             Confirm and Add Expenses
           </Button>

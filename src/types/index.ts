@@ -1,6 +1,7 @@
 
 export interface Expense {
-  id: string;
+  id: string; // Firestore document ID
+  userId: string; // Firebase Auth User UID
   name: string;
   price: number;
   category: string;
@@ -8,13 +9,14 @@ export interface Expense {
   storeName?: string;
   brand?: string;
   receiptImageUrl?: string; // Optional: if a receipt image was uploaded
+  createdAt?: number; // Timestamp for ordering, optional for now
 }
 
 export interface ScannedItem {
   name: string;
   price: number;
   brand: string;
-  category: string; // Added category
+  category: string;
 }
 
 export interface ScannedReceiptData {
@@ -24,7 +26,8 @@ export interface ScannedReceiptData {
 }
 
 export interface ShoppingListItem {
-  id: string;
+  id: string; // Firestore document ID
+  userId: string; // Firebase Auth User UID
   name: string;
   category?: string;
   quantity?: number;
@@ -34,29 +37,32 @@ export interface ShoppingListItem {
   brand?: string;
   storeName?: string;
   notes?: string;
+  createdAt?: number; // Timestamp for ordering, optional for now
 }
 
 export interface Category {
   id: string;
   name: string;
-  icon?: React.ElementType; // Lucide icon component
-  color?: string; // Hex color for UI representation
+  icon?: React.ElementType;
+  color?: string;
 }
 
 export interface Budget {
   id: string;
-  category: string; // Or categoryId
+  userId: string;
+  category: string;
   limit: number;
-  spent: number; // Calculated from expenses
+  spent: number;
   period: 'monthly' | 'weekly' | 'yearly';
 }
 
 export interface Alert {
   id: string;
+  userId: string;
   type: 'budget_deviation' | 'suggestion' | 'reminder';
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'error';
-  timestamp: string; // ISO date-time string
-  relatedEntityId?: string; // e.g., budgetId or expenseId
+  timestamp: string;
+  relatedEntityId?: string;
 }
