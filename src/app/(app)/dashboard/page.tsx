@@ -5,21 +5,102 @@ import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3 } from "lucide-react";
-import Image from "next/image";
+import { DollarSign, AlertTriangle, ReceiptText, ListPlus, FilePlus2, BarChart3, Info, CalendarClock, Loader2 } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
+import { useAuth } from "@/contexts/auth-context";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import type { Expense } from "@/types";
+import { useState, useEffect } from "react";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import { useToast } from "@/hooks/use-toast";
+import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
-// Sample data for charts - replace with actual data fetching and chart components
-const sampleSpendingData = [
-  { name: 'Groceries', value: 400, fill: "hsl(var(--chart-1))" },
-  { name: 'Utilities', value: 150, fill: "hsl(var(--chart-2))" },
-  { name: 'Transport', value: 100, fill: "hsl(var(--chart-3))" },
-  { name: 'Entertainment', value: 200, fill: "hsl(var(--chart-4))" },
-  { name: 'Other', value: 50, fill: "hsl(var(--chart-5))" },
+const chartColors = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+  "hsl(var(--chart-6, 262 80% 50%))", // Added a fallback for chart-6 if not in theme
+  "hsl(var(--chart-7, 320 75% 55%))", // Added a fallback for chart-7
 ];
+
+const processExpensesForCategoryChart = (expenses: Expense[]) => {
+  const categoryTotals: { [key: string]: number } = {};
+  const now = new Date();
+  const firstDayCurrentMonth = startOfMonth(now);
+  const lastDayCurrentMonth = endOfMonth(now);
+
+  expenses.forEach(expense => {
+    // Ensure expense.date is treated as a Date object. Firestore timestamps might need conversion.
+    // Assuming expense.date is "YYYY-MM-DD" string
+    const expenseDate = parseISO(expense.date); 
+    
+    if (expenseDate >= firstDayCurrentMonth && expenseDate <= lastDayCurrentMonth) {
+      categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.price;
+    }
+  });
+  return Object.entries(categoryTotals).map(([name, value], index) => ({ 
+    name, 
+    value, 
+    fill: chartColors[index % chartColors.length] 
+  }));
+};
+
 
 export default function DashboardPage() {
   const { selectedCurrency } = useCurrency();
+  const { user, loading: authLoading } = useAuth();
+  const { toast } = useToast();
+
+  const [userExpenses, setUserExpenses] = useState<Expense[]>([]);
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState(true);
+  const [expensesByCategory, setExpensesByCategory] = useState<ReturnType<typeof processExpensesForCategoryChart>>([]);
+
+  useEffect(() => {
+    if (!user && !authLoading) {
+      setUserExpenses([]);
+      setIsLoadingExpenses(false);
+      return;
+    }
+    if (!user) return;
+
+    setIsLoadingExpenses(true);
+    const expensesCol = collection(db, "expenses");
+    // Querying all expenses for the user, filtering for current month will happen in processExpensesForCategoryChart
+    const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedExpenses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      } as Expense));
+      setUserExpenses(fetchedExpenses);
+      setIsLoadingExpenses(false);
+    }, (error) => {
+      console.error("Error fetching expenses for dashboard:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch expense data for dashboard." });
+      setIsLoadingExpenses(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, authLoading, toast]);
+
+  useEffect(() => {
+    if (userExpenses.length > 0) {
+      setExpensesByCategory(processExpensesForCategoryChart(userExpenses));
+    } else {
+      setExpensesByCategory([]);
+    }
+  }, [userExpenses]);
+
+  const categoryChartConfig = expensesByCategory.reduce((acc, item) => {
+    acc[item.name] = { label: item.name, color: item.fill };
+    return acc;
+  }, {} as ChartConfig);
+
 
   return (
     <>
@@ -34,30 +115,30 @@ export default function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{selectedCurrency.symbol}1,234.56</div>
-            <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+            <div className="text-lg font-semibold text-muted-foreground">Feature coming soon</div>
+            <p className="text-xs text-muted-foreground">Track your overall net worth.</p>
           </CardContent>
         </Card>
 
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Upcoming Bills</CardTitle>
-            <ReceiptText className="h-4 w-4 text-muted-foreground" />
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
-            <p className="text-xs text-muted-foreground">{selectedCurrency.symbol}250.00 due this week</p>
+            <div className="text-lg font-semibold text-muted-foreground">Feature coming soon</div>
+            <p className="text-xs text-muted-foreground">Get reminders for your bills.</p>
           </CardContent>
         </Card>
 
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Spending Alerts</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1 Active</div>
-            <p className="text-xs text-muted-foreground">Close to budget limit for "Dining Out"</p>
+            <div className="text-lg font-semibold text-muted-foreground">No active alerts</div>
+            <p className="text-xs text-muted-foreground">Budget alerts will show here.</p>
           </CardContent>
         </Card>
       </div>
@@ -98,20 +179,65 @@ export default function DashboardPage() {
 
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Spending Summary</CardTitle>
+            <CardTitle>Current Month Spending</CardTitle>
             <CardDescription>Your expenses by category this month.</CardDescription>
           </CardHeader>
-          <CardContent>
-            {/* Placeholder for a simple chart representation */}
-            <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed bg-muted/50">
-               <Image src="https://placehold.co/300x200.png" alt="Spending chart placeholder" width={300} height={200} data-ai-hint="chart graph" priority />
-            </div>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              Detailed charts available in <Link href="/reports" className="text-primary hover:underline">Reports</Link>.
-            </p>
+          <CardContent className="min-h-[250px] flex flex-col justify-center items-center">
+            {authLoading || isLoadingExpenses ? (
+              <div className="flex flex-col items-center justify-center text-muted-foreground">
+                <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+                <p className="mt-2">Loading spending summary...</p>
+              </div>
+            ) : !user ? (
+                 <p className="text-muted-foreground">Please log in to see your spending summary.</p>
+            ) : expensesByCategory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center text-muted-foreground">
+                <Info className="h-10 w-10 mb-2" />
+                <p>No expenses recorded for the current month.</p>
+                <p className="text-xs">Add some expenses to see your summary here.</p>
+              </div>
+            ) : (
+              <>
+                <ChartContainer config={categoryChartConfig} className="w-full h-[200px] sm:h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <ChartTooltipContent 
+                        hideLabel 
+                        nameKey="name"
+                        formatter={(value, name, item) => {
+                          const itemPayload = item.payload;
+                          if (!itemPayload) return null;
+                          const color = itemPayload.fill || itemPayload.color;
+                          const categoryName = itemPayload.name;
+                          return (
+                            <div className="flex items-center gap-2 text-sm">
+                              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                              <div className="flex-1">
+                                <span>{categoryName}: </span>
+                                <span className="font-bold">{selectedCurrency.symbol}{Number(value).toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Pie data={expensesByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} labelLine={false} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                        {expensesByCategory.map((entry) => (
+                          <Cell key={`cell-${entry.name}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      {/* <Legend content={<ChartLegendContent nameKey="name" />} /> */}
+                    </PieChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+                 <p className="mt-4 text-center text-sm text-muted-foreground">
+                    Detailed charts available in <Link href="/reports" className="text-primary hover:underline">Reports</Link>.
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
     </>
   );
 }
+
