@@ -1,3 +1,4 @@
+
 # SmartSpend AI CoPilot
 
 SmartSpend is a Next.js application designed to help you manage your finances intelligently using AI-powered features. Track expenses, scan receipts, manage a smart shopping list, and get financial insights, all with the assistance of AI.
@@ -39,7 +40,7 @@ SmartSpend is a Next.js application designed to help you manage your finances in
     *   React Context API (for global state like currency)
 *   **Charts**:
     *   Recharts
-*   **Planned for Future**:
+*   **Database & Auth**:
     *   Firebase Authentication (for user management)
     *   Firestore (as a persistent NoSQL database)
 
@@ -51,7 +52,7 @@ SmartSpend is a Next.js application designed to help you manage your finances in
 *   npm (comes with Node.js) or yarn
 *   **Firebase Project**:
     *   Create a Firebase project at [https://console.firebase.google.com/](https://console.firebase.google.com/).
-    *   You'll need this to get Firebase configuration details for the app and eventually for using Firestore and Firebase Authentication.
+    *   You'll need this to get Firebase configuration details for the app for using Firestore and Firebase Authentication.
 *   **Google AI API Key**:
     *   Genkit uses Google AI models. You'll need an API key.
     *   You can obtain one from Google AI Studio: [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
@@ -73,10 +74,10 @@ SmartSpend is a Next.js application designed to help you manage your finances in
 ### Configuration
 
 1.  **Create an environment file**:
-    Create a file named `.env.local` in the root of your project.
+    Create a file named `.env` (or `.env.local`) in the root of your project.
 
-2.  **Add Firebase Configuration (Optional for now, but required for database/auth features later)**:
-    In your Firebase project console, go to Project settings > General. Under "Your apps", select your web app (or create one). Find the "SDK setup and configuration" and copy the `firebaseConfig` object values into your `.env.local`:
+2.  **Add Firebase Configuration**:
+    In your Firebase project console, go to Project settings > General. Under "Your apps", select your web app (or create one). Find the "SDK setup and configuration" and copy the `firebaseConfig` object values into your `.env` (or `.env.local`):
     ```env
     NEXT_PUBLIC_FIREBASE_API_KEY="YOUR_API_KEY"
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="YOUR_AUTH_DOMAIN"
@@ -88,7 +89,7 @@ SmartSpend is a Next.js application designed to help you manage your finances in
     *Note: These `NEXT_PUBLIC_` variables are accessible on the client-side. For server-side Firebase Admin SDK (if used directly later), keys would be handled differently.*
 
 3.  **Add Google AI API Key for Genkit**:
-    Add the API key you obtained from Google AI Studio to your `.env.local` file:
+    Add the API key you obtained from Google AI Studio to your `.env` (or `.env.local`) file:
     ```env
     GOOGLE_API_KEY="YOUR_GOOGLE_AI_API_KEY"
     ```
@@ -128,30 +129,39 @@ This will generate a `.next` folder with the production-ready assets. To run thi
 npm run start
 ```
 
-## Deployment
+## Deployment (Free Tier using Vercel)
 
-This project includes an `apphosting.yaml` file, indicating it's set up for deployment to **Firebase App Hosting**.
+This project is well-suited for deployment on Vercel, which offers a generous free tier for Next.js applications.
 
-1.  **Install Firebase CLI**: If you don't have it already:
-    ```bash
-    npm install -g firebase-tools
-    ```
-2.  **Login to Firebase**:
-    ```bash
-    firebase login
-    ```
-3.  **Initialize App Hosting**: If you haven't linked your local project to your Firebase project for App Hosting:
-    ```bash
-    firebase init apphosting
-    ```
-    Follow the prompts to select your Firebase project and configure the backend.
-4.  **Deploy**:
-    ```bash
-    firebase apphosting:backends:deploy yourBackendId --source=.
-    # Or use the generic deploy command if you have other Firebase services
-    # firebase deploy --only hosting # (This might need adjustment for App Hosting specifics)
-    ```
-    Refer to the official Firebase App Hosting documentation for the most current deployment commands and procedures.
+1.  **Push to a Git Repository**:
+    *   Ensure your project is a Git repository and you've committed your latest changes.
+    *   Push your repository to GitHub, GitLab, or Bitbucket.
+
+2.  **Sign Up/Log In to Vercel**:
+    *   Go to [vercel.com](https://vercel.com/) and sign up (you can use your Git provider account for quick setup).
+
+3.  **Import Your Project**:
+    *   From your Vercel dashboard, click "Add New..." -> "Project".
+    *   Import your Git repository. Vercel will usually auto-detect that it's a Next.js project.
+
+4.  **Configure Environment Variables on Vercel**:
+    *   During the import process or in your Vercel project settings (Settings -> Environment Variables), you **must** add the same environment variables you have in your local `.env` file. These are crucial for Firebase and Genkit to work in the deployed environment.
+        *   `NEXT_PUBLIC_FIREBASE_API_KEY`
+        *   `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+        *   `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+        *   `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+        *   `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+        *   `NEXT_PUBLIC_FIREBASE_APP_ID`
+        *   `GOOGLE_API_KEY` (This one does *not* start with `NEXT_PUBLIC_`)
+    *   Vercel will use these environment variables during the build and at runtime.
+
+5.  **Deploy**:
+    *   Click "Deploy". Vercel will build your application and deploy it.
+    *   Once deployed, Vercel will provide you with a URL (e.g., `your-project-name.vercel.app`) that you can share with your beta testers.
+
+6.  **Genkit on Vercel**:
+    *   Your Genkit flows are server-side code that Next.js will handle as API routes or server actions. Vercel's Node.js environment supports this.
+    *   You won't have the separate Genkit Dev UI (`:3400`) in production, but your flows will execute as part of your Next.js app.
 
 ## AI Flows
 
@@ -192,8 +202,7 @@ smartspend-ai-copilot/
 │   ├── lib/                        # Utility functions
 │   └── types/                      # TypeScript type definitions
 ├── public/                         # Static assets
-├── .env.local.example              # Example environment file (rename to .env.local)
-├── apphosting.yaml                 # Firebase App Hosting configuration
+├── .env.local.example              # Example environment file (rename to .env.local or .env)
 ├── components.json                 # ShadCN UI configuration
 ├── next.config.ts                  # Next.js configuration
 ├── package.json
@@ -215,4 +224,5 @@ smartspend-ai-copilot/
 ## Contributing
 
 Currently, this project is primarily a demonstration within Firebase Studio. If it were to become a community project, contribution guidelines would be added here.
-```
+
+    
