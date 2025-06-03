@@ -11,7 +11,7 @@ import { Loader2, AlertCircle, CheckCircle, UploadCloud, X, Sparkles } from "luc
 import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
 import type { ScannedItem } from "@/types";
 import { format } from 'date-fns';
-import Image from 'next/image';
+import NextImage from 'next/image'; // Renamed to NextImage to avoid conflict, or use window.Image
 import { useCurrency } from "@/contexts/currency-context";
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/auth-context';
@@ -36,7 +36,7 @@ const resizeAndCompressImage = (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
+    const img = new window.Image(); // Use window.Image to refer to the native HTMLImageElement constructor
     img.src = objectUrl;
 
     const cleanup = () => {
@@ -235,7 +235,7 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
 
             {previewUrl && (
               <div className="mt-2 border rounded-md p-2 flex justify-center items-center max-h-60 overflow-hidden">
-                <Image src={previewUrl} alt="Receipt preview" width={200} height={200} style={{ objectFit: 'contain' }} data-ai-hint="receipt bill" />
+                <NextImage src={previewUrl} alt="Receipt preview" width={200} height={200} style={{ objectFit: 'contain' }} data-ai-hint="receipt bill" />
               </div>
             )}
           </div>
