@@ -69,9 +69,15 @@ const prompt = ai.definePrompt({
     *   **Store Name:** Extract the store name from the receipt.
     *   **Total Amount:** Extract the final total amount paid as shown on the receipt. Ensure this is a numeric value.
 
-4.  **Output Format (After your internal analysis and rule application):**
+4.  **Internal Validation (Crucial):**
+    *   After tentatively identifying all items and their prices, and the total amount from the receipt:
+    *   **Mentally sum the prices of all the items you plan to list in your output.**
+    *   **Compare this sum with the total amount you extracted from the receipt.**
+    *   If there is a significant discrepancy (e.g., more than a few cents due to potential rounding differences if taxes are itemized weirdly, but ideally it should match exactly or very closely to a subtotal if that's what items represent), re-evaluate your itemization. You might have mis-assigned prices, missed an item, or incorrectly interpreted a bundled deal. Adjust your item list to ensure the sum of item prices accurately reflects the receipt's subtotal or total logic as best as possible. Your goal is to produce an itemization that logically adds up to the overall payment.
+
+5.  **Output Format (After your internal analysis, rule application, and internal validation):**
     *   Return a JSON object that strictly adheres to the provided output schema.
-    *   Ensure the 'items' array accurately reflects the distinct purchased units and their correct prices as interpreted from the receipt, based on your structural analysis.
+    *   Ensure the 'items' array accurately reflects the distinct purchased units and their correct prices as interpreted from the receipt, based on your structural analysis and internal validation.
     *   Avoid duplicating items or misattributing prices. The goal is to reflect how many separately-payable units were purchased.
     *   If an item like "FREE ENTREE ITEM!" appears with no price, it should generally be omitted from the 'items' list unless it has a $0.00 price explicitly. Focus on items contributing to the subtotal/total.
 
