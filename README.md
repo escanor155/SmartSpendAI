@@ -174,6 +174,25 @@ The AI logic is managed by Genkit flows, located in `src/ai/flows/`:
 
 The Genkit configuration, including the chosen AI model (e.g., `gemini-2.0-flash`), is in `src/ai/genkit.ts`.
 
+## Security Considerations
+
+This application incorporates several security measures and best practices:
+
+*   **Firebase Authentication**: Securely handles user registration, login, and session management. Sensitive credentials like passwords are not stored directly by the app.
+*   **Firestore Security Rules**: Server-side rules are configured in your Firebase project to ensure users can only access and modify their own data (expenses, shopping list items, preferences). These rules are enforced by Firebase directly.
+*   **Environment Variables**:
+    *   Sensitive API keys (like `GOOGLE_API_KEY` for Genkit and Firebase service configurations) are managed through environment variables.
+    *   **Crucially, `.env` and `.env.local` files containing these keys MUST NOT be committed to version control (GitHub).** They should be listed in your `.gitignore` file.
+    *   When deploying to Vercel, these environment variables must be securely configured in the Vercel project settings.
+*   **Input Validation**:
+    *   Client-side forms use Zod for validating user input before submission.
+    *   Genkit AI flows use Zod schemas to validate their inputs and expected outputs, ensuring data integrity when interacting with AI models.
+*   **HTTPS**: Deployments on Vercel are automatically served over HTTPS, encrypting data in transit.
+*   **Next.js/React Defaults**: The frameworks provide built-in protections against common web vulnerabilities like Cross-Site Scripting (XSS) through automatic data escaping in JSX.
+*   **Genkit Flow Execution**: AI flows are executed on the server-side. Calls to AI models are authenticated. Data mutations resulting from flow outputs are typically performed by client-side logic that is subject to Firestore security rules.
+
+It's important to regularly review security configurations, especially Firestore rules and environment variable management, as the application evolves.
+
 ## Key Folder Structure
 
 ```
@@ -225,4 +244,5 @@ smartspend-ai-copilot/
 
 Currently, this project is primarily a demonstration within Firebase Studio. If it were to become a community project, contribution guidelines would be added here.
 
+    
     
