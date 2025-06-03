@@ -16,7 +16,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { db } from "@/lib/firebase";
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  addDoc, updateDoc, deleteDoc, doc, serverTimestamp 
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc 
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
@@ -96,6 +96,7 @@ function ExpensesContent() {
       toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to update expenses." });
       return;
     }
+    
     if (updatedExpense.userId !== user.uid) {
       toast({ variant: "destructive", title: "Authorization Error", description: "You cannot update this expense."});
       return;
@@ -103,8 +104,11 @@ function ExpensesContent() {
     try {
       const expenseRef = doc(db, "expenses", updatedExpense.id);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id, userId, ...dataToUpdate } = updatedExpense; // Exclude id and userId from data payload
-      await updateDoc(expenseRef, dataToUpdate);
+      const { id, userId, createdAt, ...dataToUpdate } = updatedExpense; 
+      
+      const updatePayload: Partial<Expense> = { ...dataToUpdate };
+      
+      await updateDoc(expenseRef, updatePayload);
       toast({ title: "Success", description: "Expense updated successfully." });
       setShowExpenseForm(false);
       setEditingExpense(null);
@@ -124,7 +128,9 @@ function ExpensesContent() {
       toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to delete expenses." });
       return;
     }
-    // Optional: Fetch the expense to verify userId before deleting, or rely on security rules
+
+    console.log(`Attempting to delete expense. User UID: ${user.uid}, Expense ID: ${expenseId}`);
+
     try {
       await deleteDoc(doc(db, "expenses", expenseId));
       toast({ title: "Success", description: "Expense deleted successfully." });
@@ -136,7 +142,7 @@ function ExpensesContent() {
 
   const handleToggleForm = () => {
     setShowExpenseForm(prev => !prev);
-    if (showExpenseForm) setEditingExpense(null);
+    if (showExpenseForm) setEditingExpense(null); 
   }
 
   return (
@@ -153,7 +159,6 @@ function ExpensesContent() {
                   Scan Receipt
                 </Button>
               </DialogTrigger>
-              {/* ReceiptScanModal will now directly save to Firestore */}
               <ReceiptScanModal onOpenChange={setIsReceiptModalOpen} />
             </Dialog>
             <Button onClick={handleToggleForm}>
@@ -212,3 +217,4 @@ export default function ExpensesPage() {
     </Suspense>
   );
 }
+
