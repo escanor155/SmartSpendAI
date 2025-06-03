@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle, UploadCloud, X, Sparkles } from "lucide-react";
 import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
-import type { ScannedItem } from "@/types"; // Expense type removed, direct save
+import type { ScannedItem } from "@/types";
 import { format } from 'date-fns';
 import Image from 'next/image';
 import { useCurrency } from "@/contexts/currency-context";
@@ -23,6 +23,82 @@ interface ReceiptScanModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const MAX_IMAGE_WIDTH = 1200;
+const MAX_IMAGE_HEIGHT = 1200;
+const JPEG_IMAGE_QUALITY = 0.8;
+
+// Helper function to resize and compress image, then convert to Data URI
+const resizeAndCompressImage = (
+  file: File,
+  maxWidth: number,
+  maxHeight: number,
+  quality: number
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.src = objectUrl;
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    img.onload = () => {
+      let { width, height } = img;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        cleanup();
+        return reject(new Error('Could not get canvas context'));
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          cleanup();
+          if (blob) {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = (e) => reject(e);
+            reader.readAsDataURL(blob);
+          } else {
+            reject(new Error('Canvas to Blob conversion failed'));
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = (err) => {
+      cleanup();
+      console.error("Image loading/resizing error, falling back to original file:", err);
+      // Fallback: convert original file directly to Data URI
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    };
+  });
+};
+
+
 export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -32,24 +108,21 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
   const { selectedCurrency } = useCurrency();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [processedReceiptDataUri, setProcessedReceiptDataUri] = useState<string | null>(null);
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
+      if (previewUrl) { // Revoke old object URL if one exists
+        URL.revokeObjectURL(previewUrl);
+      }
       setPreviewUrl(URL.createObjectURL(file));
       setScanResult(null);
       setError(null);
+      setProcessedReceiptDataUri(null);
     }
-  };
-
-  const convertFileToDataUri = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   };
 
   const handleScan = async () => {
@@ -58,15 +131,24 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
     setIsScanning(true);
     setError(null);
     setScanResult(null);
+    setProcessedReceiptDataUri(null);
 
     try {
-      const receiptDataUri = await convertFileToDataUri(selectedFile);
-      const result = await scanReceipt({ receiptDataUri });
+      const dataUri = await resizeAndCompressImage(
+        selectedFile,
+        MAX_IMAGE_WIDTH,
+        MAX_IMAGE_HEIGHT,
+        JPEG_IMAGE_QUALITY
+      );
+      setProcessedReceiptDataUri(dataUri); // Store for potential save
+
+      const result = await scanReceipt({ receiptDataUri: dataUri });
       setScanResult(result);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error scanning receipt:", err);
-      setError("Failed to scan receipt. Please try again or enter manually.");
-      toast({ variant: "destructive", title: "Scan Error", description: "The AI failed to process the receipt image."});
+      const errorMessage = err.message || "Failed to scan receipt. Please try again or enter manually.";
+      setError(errorMessage);
+      toast({ variant: "destructive", title: "Scan Error", description: errorMessage});
     } finally {
       setIsScanning(false);
     }
@@ -88,8 +170,8 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
       category: item.category || "Uncategorized",
       date: today,
       storeName: scanResult.storeName,
-      brand: item.brand || '', // Ensure brand is not undefined
-      receiptImageUrl: previewUrl || undefined, 
+      brand: item.brand || '',
+      receiptImageUrl: processedReceiptDataUri || undefined, // Use the processed (potentially smaller) Data URI
       createdAt: serverTimestamp()
     }));
 
@@ -99,7 +181,7 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
         await addDoc(expensesCollectionRef, expense);
       }
       toast({ title: "Success", description: `${expensesToSave.length} expenses added from receipt.`});
-      onOpenChange(false); // Close modal after confirming
+      onOpenChange(false); 
     } catch (e) {
         console.error("Error saving scanned expenses:", e);
         toast({variant: "destructive", title: "Database Error", description: "Could not save scanned expenses."});
@@ -108,20 +190,34 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
   
   const clearSelection = () => {
     setSelectedFile(null);
-    setPreviewUrl(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
     setScanResult(null);
     setError(null);
+    setProcessedReceiptDataUri(null);
     const fileInput = document.getElementById('receipt-upload') as HTMLInputElement;
     if (fileInput) {
         fileInput.value = ""; 
     }
   };
 
+  // Cleanup object URL when component unmounts or previewUrl changes
+  React.useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+
   return (
     <DialogContent className="sm:max-w-[600px]">
       <DialogHeader>
         <DialogTitle>Scan Receipt</DialogTitle>
-        <DialogDescription>Upload an image of your receipt to automatically extract expense details and categories.</DialogDescription>
+        <DialogDescription>Upload an image of your receipt to automatically extract expense details. Large images will be resized.</DialogDescription>
       </DialogHeader>
 
       <div className="space-y-4 py-4">
@@ -152,7 +248,7 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
           </div>
         )}
 
-        {error && !isScanning && ( // Only show manual error if not currently scanning
+        {error && !isScanning && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Scan Error</AlertTitle>
