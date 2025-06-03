@@ -44,10 +44,30 @@ const prompt = ai.definePrompt({
   name: 'scanReceiptPrompt',
   input: {schema: ScanReceiptInputSchema},
   output: {schema: ScanReceiptOutputSchema},
-  prompt: `You are an expert receipt scanner. You will use OCR to extract the items, prices, brand, and store from the receipt.
-For each item, also determine its category (e.g., Food, Drink, Groceries, Apparel, Electronics, Household Supplies, Personal Care, Services, Other). Provide a general category. If you are unsure of a category for an item, use 'Uncategorized'.
-If a brand is not clearly identifiable for an item, provide an empty string for the brand.
-Return a JSON object that contains a list of items (each with name, price, brand, and category), the store name, and the total amount on the receipt.
+  prompt: `You are an expert receipt scanner. Your task is to accurately extract item details, prices, brand, store name, and total amount from the provided receipt image.
+
+Key Instructions for Item Extraction and Pricing:
+1.  **Identify Distinct Purchased Units:**
+    *   If the receipt lists a "Plate", "Combo", "Meal", or similar grouped offering with a single price, and then lists components under it (e.g., "1 Plate $9.10" followed by "Chow Mein", "Broccoli Beef"), treat this entire "Plate" or "Combo" as **one single item** in your output.
+        *   The **name** for this item should be descriptive, such as "Plate (Chow Mein, Broccoli Beef, Beijing Beef)" or "Combo Meal (Item A, Item B)". Include the main components in the name.
+        *   The **price** for this item is the price listed for the "Plate" or "Combo" itself (e.g., $9.10).
+        *   Do **NOT** list the individual components of such a priced group as separate items in the output array unless they themselves have a separate, distinct price listed next to them on the receipt.
+    *   Items listed with their own distinct price on the receipt (e.g., "Extra Entree $1.50", "Soda $2.00") should be extracted as **separate individual items** with their respective prices.
+
+2.  **For each extracted item (whether a grouped plate/combo or an individual item):**
+    *   **Price:** Assign the correct price as determined above. Ensure prices are numeric.
+    *   **Brand:** Identify the brand if clearly mentioned (e.g., "Pepsi"). If not clearly identifiable, provide an empty string for the brand.
+    *   **Category:** Determine its category (e.g., Food, Drink, Groceries, Household Supplies, Other). Provide a general category. If you are unsure, use 'Uncategorized'.
+
+3.  **Overall Receipt Details:**
+    *   **Store Name:** Extract the store name from the receipt.
+    *   **Total Amount:** Extract the final total amount paid as shown on the receipt. Ensure this is a numeric value.
+
+4.  **Output Format:**
+    *   Return a JSON object that strictly adheres to the provided output schema.
+    *   Ensure the 'items' array accurately reflects the distinct purchased units and their correct prices as interpreted from the receipt.
+    *   Avoid duplicating items or misattributing prices. The goal is to reflect how many separately-payable units were purchased.
+    *   If an item like "FREE ENTREE ITEM!" appears with no price, it should generally be omitted from the 'items' list unless it has a $0.00 price explicitly. Focus on items contributing to the subtotal/total.
 
 Receipt: {{media url=receiptDataUri}}`,
 });
@@ -71,3 +91,4 @@ const scanReceiptFlow = ai.defineFlow(
     return output;
   }
 );
+
