@@ -43,7 +43,7 @@ function ExpensesContent() {
 
   useEffect(() => {
     if (!user) {
-      if (!authLoading) { // Only set loading to false if auth is resolved and there's no user
+      if (!authLoading) { 
         setExpenses([]);
         setIsLoadingExpenses(false);
       }
@@ -55,10 +55,16 @@ function ExpensesContent() {
     const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"), orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const userExpenses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      } as Expense));
+      const userExpenses = snapshot.docs.map(docSnapshot => {
+        const data = docSnapshot.data();
+        // Ensure 'id' is the Firestore document ID and not overwritten by data.id if it exists.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: internalId, ...restData } = data; 
+        return {
+          ...restData,
+          id: docSnapshot.id, 
+        } as Expense;
+      });
       setExpenses(userExpenses);
       setIsLoadingExpenses(false);
     }, (error) => {
@@ -71,14 +77,18 @@ function ExpensesContent() {
   }, [user, authLoading, toast]);
 
 
-  const handleAddExpense = async (newExpenseData: Omit<Expense, 'id' | 'userId' | 'createdAt'>) => {
+  const handleAddExpense = async (expenseDataFromForm: Expense) => {
     if (!user) {
       toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to add expenses." });
       return;
     }
+    // Destructure to remove the form-generated 'id' and other client-only or server-generated fields.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, userId, createdAt, ...dataToSave } = expenseDataFromForm; 
+    
     try {
       await addDoc(collection(db, "expenses"), {
-        ...newExpenseData,
+        ...dataToSave, // This now excludes the internal 'id' field
         userId: user.uid,
         createdAt: serverTimestamp() 
       });
@@ -102,13 +112,14 @@ function ExpensesContent() {
       return;
     }
     try {
-      const expenseRef = doc(db, "expenses", updatedExpense.id);
+      // updatedExpense.id here IS the Firestore Document ID because of the corrected mapping
+      const expenseRef = doc(db, "expenses", updatedExpense.id); 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, userId, createdAt, ...dataToUpdate } = updatedExpense; 
       
-      const updatePayload: Partial<Expense> = { ...dataToUpdate };
-      
-      await updateDoc(expenseRef, updatePayload);
+      // dataToUpdate will not contain the internal 'id' if it was present in updatedExpense's spread data
+      // and also correctly uses the actual client-side fields for updating.
+      await updateDoc(expenseRef, dataToUpdate);
       toast({ title: "Success", description: "Expense updated successfully." });
       setShowExpenseForm(false);
       setEditingExpense(null);
@@ -123,16 +134,18 @@ function ExpensesContent() {
     setShowExpenseForm(true);
   };
 
-  const handleDeleteExpense = async (expenseId: string) => {
+  const handleDeleteExpense = async (expenseFirestoreId: string) => { // Renamed parameter for clarity
     if (!user) {
       toast({ variant: "destructive", title: "Authentication Error", description: "You must be logged in to delete expenses." });
       return;
     }
 
-    console.log(`Attempting to delete expense. User UID: ${user.uid}, Expense ID: ${expenseId}`);
+    // This log now uses expenseFirestoreId which should be the actual Firestore document ID
+    console.log(`Attempting to delete expense. User UID: ${user.uid}, Expense Document ID: ${expenseFirestoreId}`);
 
     try {
-      await deleteDoc(doc(db, "expenses", expenseId));
+      // Use the correct Firestore document ID for deletion
+      await deleteDoc(doc(db, "expenses", expenseFirestoreId)); 
       toast({ title: "Success", description: "Expense deleted successfully." });
     } catch (error) {
       console.error("Error deleting expense:", error);
