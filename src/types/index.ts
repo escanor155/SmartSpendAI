@@ -3,7 +3,8 @@ export interface Expense {
   id: string; // Firestore document ID
   userId: string; // Firebase Auth User UID
   name: string;
-  price: number;
+  price: number; // This will now represent unit price if quantity is > 1
+  quantity?: number; // Optional: quantity of the item
   category: string;
   date: string; // ISO date string, e.g., "2024-07-15"
   storeName?: string;
@@ -14,7 +15,9 @@ export interface Expense {
 
 export interface ScannedItem {
   name: string;
-  price: number;
+  quantity: number;
+  unitPrice: number;
+  totalItemPrice: number;
   brand: string;
   category: string;
 }

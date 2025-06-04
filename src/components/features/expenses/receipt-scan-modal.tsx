@@ -9,9 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, AlertCircle, CheckCircle, UploadCloud, X, Sparkles } from "lucide-react";
 import { scanReceipt, type ScanReceiptOutput } from "@/ai/flows/scan-receipt";
-import type { ScannedItem } from "@/types";
+import type { ScannedItem, Expense } from "@/types"; // Expense type needed for saving
 import { format } from 'date-fns';
-import NextImage from 'next/image'; // Renamed to NextImage to avoid conflict, or use window.Image
+import NextImage from 'next/image';
 import { useCurrency } from "@/contexts/currency-context";
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/auth-context';
@@ -36,7 +36,7 @@ const resizeAndCompressImage = (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
-    const img = new window.Image(); // Use window.Image to refer to the native HTMLImageElement constructor
+    const img = new window.Image(); 
     img.src = objectUrl;
 
     const cleanup = () => {
@@ -89,7 +89,6 @@ const resizeAndCompressImage = (
     img.onerror = (err) => {
       cleanup();
       console.error("Image loading/resizing error, falling back to original file:", err);
-      // Fallback: convert original file directly to Data URI
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
       reader.onerror = (e) => reject(e);
@@ -115,7 +114,7 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      if (previewUrl) { // Revoke old object URL if one exists
+      if (previewUrl) { 
         URL.revokeObjectURL(previewUrl);
       }
       setPreviewUrl(URL.createObjectURL(file));
@@ -140,7 +139,7 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
         MAX_IMAGE_HEIGHT,
         JPEG_IMAGE_QUALITY
       );
-      setProcessedReceiptDataUri(dataUri); // Store for potential save
+      setProcessedReceiptDataUri(dataUri); 
 
       const result = await scanReceipt({ receiptDataUri: dataUri });
       setScanResult(result);
@@ -163,22 +162,26 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
     }
 
     const today = format(new Date(), 'yyyy-MM-dd');
-    const expensesToSave = scanResult.items.map((item: ScannedItem) => ({
-      userId: user.uid,
+    // Map ScannedItem to Expense type
+    const expensesToSave: Omit<Expense, 'id' | 'userId' | 'createdAt'>[] = scanResult.items.map((item: ScannedItem) => ({
       name: item.name,
-      price: item.price,
+      price: item.unitPrice, // Store unit price as the expense price
+      quantity: item.quantity, // Store the quantity
       category: item.category || "Uncategorized",
       date: today,
       storeName: scanResult.storeName,
       brand: item.brand || '',
-      receiptImageUrl: processedReceiptDataUri || undefined, // Use the processed (potentially smaller) Data URI
-      createdAt: serverTimestamp()
+      receiptImageUrl: processedReceiptDataUri || undefined, 
     }));
 
     try {
       const expensesCollectionRef = collection(db, "expenses");
-      for (const expense of expensesToSave) {
-        await addDoc(expensesCollectionRef, expense);
+      for (const expenseData of expensesToSave) {
+        await addDoc(expensesCollectionRef, { 
+          ...expenseData, 
+          userId: user.uid, 
+          createdAt: serverTimestamp() 
+        });
       }
       toast({ title: "Success", description: `${expensesToSave.length} expenses added from receipt.`});
       onOpenChange(false); 
@@ -203,7 +206,6 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
     }
   };
 
-  // Cleanup object URL when component unmounts or previewUrl changes
   React.useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -267,19 +269,21 @@ export function ReceiptScanModal({ onOpenChange }: ReceiptScanModalProps) {
             </Alert>
             <div className="max-h-60 overflow-y-auto rounded-md border p-4 space-y-2 text-sm">
               <p><strong>Store:</strong> {scanResult.storeName}</p>
-              <p><strong>Total:</strong> {selectedCurrency.symbol}{scanResult.total.toFixed(2)}</p>
+              <p><strong>Total Receipt Amount:</strong> {selectedCurrency.symbol}{scanResult.total.toFixed(2)}</p>
               <strong>Items:</strong>
               <ul>
                 {scanResult.items.map((item, index) => (
-                  <li key={index} className="flex justify-between items-center">
-                    <span>
-                      - {item.name} ({selectedCurrency.symbol}{item.price.toFixed(2)}) 
-                      {item.brand && ` [${item.brand}]`}
-                    </span>
-                    <Badge variant={item.category === "Uncategorized" ? "outline" : "secondary"} className="ml-2">
-                       {item.category === "Uncategorized" ? null : <Sparkles className="mr-1 h-3 w-3 text-primary" />}
-                       {item.category}
-                    </Badge>
+                  <li key={index} className="py-1 border-b last:border-b-0">
+                    <div className="flex justify-between items-center">
+                        <span>{item.name} {item.brand && `[${item.brand}]`}</span>
+                        <Badge variant={item.category === "Uncategorized" ? "outline" : "secondary"} className="ml-2">
+                        {item.category === "Uncategorized" ? null : <Sparkles className="mr-1 h-3 w-3 text-primary" />}
+                        {item.category}
+                        </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                        Qty: {item.quantity} @ {selectedCurrency.symbol}{item.unitPrice.toFixed(2)} each = Total: {selectedCurrency.symbol}{item.totalItemPrice.toFixed(2)}
+                    </div>
                   </li>
                 ))}
               </ul>
