@@ -11,14 +11,13 @@ import { Label } from '@/components/ui/label';
 import { PlusCircle, Trash2, Sparkles, Loader2, ShoppingCart, Search, History, PackagePlus } from "lucide-react";
 import type { ShoppingListItem, Expense } from "@/types";
 import { suggestShoppingListItems, type SuggestShoppingListItemsInput } from "@/ai/flows/suggest-shopping-list-items";
-// import { processShoppingRequest, type ProcessShoppingRequestInput } from "@/ai/flows/process-shopping-request"; // No longer primary add method
 import { cn } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit, startAt, endAt
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit
 } from "firebase/firestore";
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -100,25 +99,19 @@ export default function ShoppingListPage() {
     try {
       const searchTerm = newItemNameInput.toLowerCase();
       const expensesCol = collection(db, "expenses");
-      // Basic prefix search. For more complex search, consider dedicated search service or more complex querying.
-      // This query is case-sensitive. For case-insensitive, you'd typically store a lowercased version of the name.
-      // For simplicity, we'll filter client-side for "contains" after a broader fetch if needed, or rely on prefix.
+      
+      // Fetch all expenses for the user. Client-side will handle "contains" filtering and sorting.
+      // For very large datasets, a dedicated search service would be more performant.
       const q = query(
         expensesCol, 
-        where("userId", "==", user.uid), 
-        orderBy("name") // Order by name to use range queries
-        // where("name", ">=", searchTerm), // This is case sensitive
-        // where("name", "<=", searchTerm + '\uf8ff') // Case sensitive
-        // Firestore doesn't directly support case-insensitive "contains" queries efficiently.
-        // We'll fetch based on user ID and then filter client-side for broad matching.
-        // A more optimized approach for large datasets would be using a search service like Algolia or Typesense.
+        where("userId", "==", user.uid)
       );
 
       const snapshot = await getDocs(q);
-      let matchedExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
+      const allUserExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
       
-      // Client-side filter for "contains" case-insensitively
-      matchedExpenses = matchedExpenses.filter(expense => 
+      // Client-side filter for "contains" case-insensitively and sort by price
+      const matchedExpenses = allUserExpenses.filter(expense => 
         expense.name.toLowerCase().includes(searchTerm)
       ).sort((a, b) => a.price - b.price); // Sort by price ascending
 
@@ -151,7 +144,7 @@ export default function ShoppingListPage() {
     const newItem: Omit<ShoppingListItem, 'id' | 'userId' | 'createdAt'> = {
       name: suggestedItem.name,
       isPurchased: false,
-      isAISuggested: false, // This is from past purchases, not direct AI suggestion for *new* items
+      isAISuggested: false, 
       price: suggestedItem.price,
       brand: suggestedItem.brand,
       storeName: suggestedItem.storeName,
@@ -168,8 +161,8 @@ export default function ShoppingListPage() {
     try {
       await addDoc(collection(db, "shoppingListItems"), { ...newItem, userId: user.uid, createdAt: serverTimestamp() });
       toast({ title: "Item Added", description: `"${newItem.name}" added to your shopping list.` });
-      setNewItemNameInput(""); // Clear input
-      setPastPurchaseSuggestions([]); // Clear suggestions
+      setNewItemNameInput(""); 
+      setPastPurchaseSuggestions([]); 
     } catch (error) {
       console.error("Error adding item from suggestion:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not add item to list." });
@@ -448,5 +441,3 @@ export default function ShoppingListPage() {
   );
 }
 
-
-    
