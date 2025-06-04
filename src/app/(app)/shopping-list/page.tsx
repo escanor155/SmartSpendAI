@@ -4,24 +4,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; // Will remove this for past purchases
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from '@/components/ui/label';
-import { PlusCircle, Trash2, Sparkles, Loader2, ShoppingCart, Search } from "lucide-react";
+import { PlusCircle, Trash2, Sparkles, Loader2, ShoppingCart, Search, History, PackagePlus } from "lucide-react";
 import type { ShoppingListItem, Expense } from "@/types";
 import { suggestShoppingListItems, type SuggestShoppingListItemsInput } from "@/ai/flows/suggest-shopping-list-items";
-import { processShoppingRequest, type ProcessShoppingRequestInput } from "@/ai/flows/process-shopping-request";
+// import { processShoppingRequest, type ProcessShoppingRequestInput } from "@/ai/flows/process-shopping-request"; // No longer primary add method
 import { cn } from "@/lib/utils";
-import { Textarea } from '@/components/ui/textarea';
 import { useCurrency } from "@/contexts/currency-context";
 import { useAuth } from '@/contexts/auth-context';
 import { db } from '@/lib/firebase';
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit, startAt, endAt
 } from "firebase/firestore";
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 export default function ShoppingListPage() {
@@ -31,10 +31,12 @@ export default function ShoppingListPage() {
 
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
-  const [userPrompt, setUserPrompt] = useState("");
   
-  const [isProcessingAgentRequest, setIsProcessingAgentRequest] = useState(false);
-  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [newItemNameInput, setNewItemNameInput] = useState("");
+  const [pastPurchaseSuggestions, setPastPurchaseSuggestions] = useState<Expense[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+
+  const [isSuggestingFromAI, setIsSuggestingFromAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
 
@@ -66,12 +68,12 @@ export default function ShoppingListPage() {
     return () => unsubscribe();
   }, [user, authLoading, toast]);
 
-  // Fetch user's expenses for AI suggestions
-  const fetchUserExpensesForAI = useCallback(async (): Promise<Pick<Expense, 'name' | 'price' | 'brand' | 'storeName'>[]> => {
+  // Fetch user's expenses for AI suggestions (general)
+  const fetchUserExpensesForAISuggestions = useCallback(async (): Promise<Pick<Expense, 'name' | 'price' | 'brand' | 'storeName'>[]> => {
     if (!user) return [];
     try {
       const expensesCol = collection(db, "expenses");
-      const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc")); // Maybe limit this later
+      const q = query(expensesCol, where("userId", "==", user.uid), orderBy("date", "desc"), limit(50)); // Limit to last 50 expenses for broader AI suggestions
       const snapshot = await getDocs(q);
       return snapshot.docs.map(doc => {
         const data = doc.data();
@@ -84,56 +86,119 @@ export default function ShoppingListPage() {
       });
     } catch (error) {
       console.error("Error fetching expenses for AI:", error);
-      toast({ variant: "destructive", title: "AI Error", description: "Could not fetch expense history for suggestions." });
+      toast({ variant: "destructive", title: "AI Error", description: "Could not fetch expense history for AI suggestions." });
       return [];
     }
   }, [user, toast]);
 
-
-  const handleAgenticAddItem = async () => {
-    if (userPrompt.trim() === "" || !user) {
-      if(!user) toast({ variant: "destructive", title: "Not Logged In", description: "Please log in to add items." });
+  const handleSearchPastPurchases = useCallback(async () => {
+    if (!newItemNameInput.trim() || !user) {
+      setPastPurchaseSuggestions([]);
       return;
     }
-    setIsProcessingAgentRequest(true);
-    setAiError(null);
+    setIsLoadingSuggestions(true);
     try {
-      const userExpenseHistory = await fetchUserExpensesForAI();
-      const input: ProcessShoppingRequestInput = {
-        userPrompt: userPrompt,
-        expenseHistory: userExpenseHistory,
-      };
-      const result = await processShoppingRequest(input);
+      const searchTerm = newItemNameInput.toLowerCase();
+      const expensesCol = collection(db, "expenses");
+      // Basic prefix search. For more complex search, consider dedicated search service or more complex querying.
+      // This query is case-sensitive. For case-insensitive, you'd typically store a lowercased version of the name.
+      // For simplicity, we'll filter client-side for "contains" after a broader fetch if needed, or rely on prefix.
+      const q = query(
+        expensesCol, 
+        where("userId", "==", user.uid), 
+        orderBy("name") // Order by name to use range queries
+        // where("name", ">=", searchTerm), // This is case sensitive
+        // where("name", "<=", searchTerm + '\uf8ff') // Case sensitive
+        // Firestore doesn't directly support case-insensitive "contains" queries efficiently.
+        // We'll fetch based on user ID and then filter client-side for broad matching.
+        // A more optimized approach for large datasets would be using a search service like Algolia or Typesense.
+      );
+
+      const snapshot = await getDocs(q);
+      let matchedExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
       
-      const itemsCollectionRef = collection(db, "shoppingListItems");
-      for (const item of result.itemsToAdd) {
-        const newItemFromAgent: Omit<ShoppingListItem, 'id' | 'userId' | 'createdAt'> = {
-          name: item.name,
-          isPurchased: false,
-          isAISuggested: true, 
-          price: item.price,
-          brand: item.brand,
-          storeName: item.storeName,
-          notes: item.notes,
-        };
-        // Avoid adding exact duplicates by name if an item already exists (Firestore doesn't enforce this, app logic)
-        const existingItem = items.find(i => i.name.toLowerCase() === item.name.toLowerCase());
-        if (!existingItem) {
-           await addDoc(itemsCollectionRef, { ...newItemFromAgent, userId: user.uid, createdAt: serverTimestamp() });
-        } else {
-           toast({title: "Item Exists", description: `Item "${item.name}" is already on your list.`});
-        }
-      }
-      setUserPrompt(""); 
-      toast({ title: "Success", description: "Items processed and added to your list." });
-    } catch (err) {
-      console.error("Error processing shopping request:", err);
-      setAiError("Failed to process your request with AI. Please try again.");
-      toast({ variant: "destructive", title: "AI Error", description: "Failed to process your request." });
+      // Client-side filter for "contains" case-insensitively
+      matchedExpenses = matchedExpenses.filter(expense => 
+        expense.name.toLowerCase().includes(searchTerm)
+      ).sort((a, b) => a.price - b.price); // Sort by price ascending
+
+      setPastPurchaseSuggestions(matchedExpenses.slice(0, 10)); // Show top 10 matches
+    } catch (error) {
+      console.error("Error searching past purchases:", error);
+      toast({ variant: "destructive", title: "Search Error", description: "Could not search past purchases." });
+      setPastPurchaseSuggestions([]);
     } finally {
-      setIsProcessingAgentRequest(false);
+      setIsLoadingSuggestions(false);
+    }
+  }, [newItemNameInput, user, toast]);
+  
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (newItemNameInput.trim().length > 1) { // Search only if input is reasonably long
+        handleSearchPastPurchases();
+      } else {
+        setPastPurchaseSuggestions([]);
+      }
+    }, 500); // Debounce time: 500ms
+    return () => clearTimeout(timer);
+  }, [newItemNameInput, handleSearchPastPurchases]);
+
+
+  const handleAddItemFromSuggestion = async (suggestedItem: Expense) => {
+    if (!user) return;
+    
+    const newItem: Omit<ShoppingListItem, 'id' | 'userId' | 'createdAt'> = {
+      name: suggestedItem.name,
+      isPurchased: false,
+      isAISuggested: false, // This is from past purchases, not direct AI suggestion for *new* items
+      price: suggestedItem.price,
+      brand: suggestedItem.brand,
+      storeName: suggestedItem.storeName,
+      notes: `Based on past purchase on ${new Date(suggestedItem.date).toLocaleDateString()}`,
+      category: suggestedItem.category,
+    };
+
+    const existingItem = items.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && !i.isPurchased);
+    if (existingItem) {
+      toast({ title: "Item Exists", description: `"${newItem.name}" is already on your active shopping list.` });
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "shoppingListItems"), { ...newItem, userId: user.uid, createdAt: serverTimestamp() });
+      toast({ title: "Item Added", description: `"${newItem.name}" added to your shopping list.` });
+      setNewItemNameInput(""); // Clear input
+      setPastPurchaseSuggestions([]); // Clear suggestions
+    } catch (error) {
+      console.error("Error adding item from suggestion:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not add item to list." });
     }
   };
+  
+  const handleAddUntrackedItem = async () => {
+    if (!newItemNameInput.trim() || !user) return;
+
+    const newItem: Omit<ShoppingListItem, 'id' | 'userId' | 'createdAt'> = {
+        name: newItemNameInput.trim(),
+        isPurchased: false,
+    };
+    const existingItem = items.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && !i.isPurchased);
+    if (existingItem) {
+      toast({ title: "Item Exists", description: `"${newItem.name}" is already on your active shopping list.` });
+      return;
+    }
+    try {
+        await addDoc(collection(db, "shoppingListItems"), { ...newItem, userId: user.uid, createdAt: serverTimestamp() });
+        toast({ title: "Item Added", description: `"${newItem.name}" added to your shopping list.` });
+        setNewItemNameInput("");
+        setPastPurchaseSuggestions([]);
+    } catch (error) {
+        console.error("Error adding untracked item:", error);
+        toast({ variant: "destructive", title: "Error", description: "Could not add untracked item."});
+    }
+  };
+
 
   const handleToggleItemPurchased = async (id: string) => {
     if (!user) return;
@@ -142,7 +207,6 @@ export default function ShoppingListPage() {
     try {
       const itemRef = doc(db, "shoppingListItems", id);
       await updateDoc(itemRef, { isPurchased: !item.isPurchased });
-      // Real-time listener updates local state
     } catch (error) {
       console.error("Error toggling item purchased status:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not update item status." });
@@ -153,7 +217,6 @@ export default function ShoppingListPage() {
     if (!user) return;
     try {
       await deleteDoc(doc(db, "shoppingListItems", id));
-      // Real-time listener updates local state
     } catch (error) {
       console.error("Error removing item:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not remove item." });
@@ -165,15 +228,15 @@ export default function ShoppingListPage() {
       toast({ variant: "destructive", title: "Not Logged In", description: "Please log in to get suggestions." });
       return;
     }
-    setIsSuggesting(true);
+    setIsSuggestingFromAI(true);
     setAiError(null);
     try {
-      const userExpenses = await fetchUserExpensesForAI();
-      const pastPurchaseNames = Array.from(new Set(userExpenses.map(e => e.name))).slice(0, 20).join(', '); // Get unique names, limit for prompt
+      const userExpenses = await fetchUserExpensesForAISuggestions();
+      const pastPurchaseNames = Array.from(new Set(userExpenses.map(e => e.name))).slice(0, 20).join(', ');
 
       if (!pastPurchaseNames.trim()) {
-        setAiError("No purchase history found to base suggestions on. Add some expenses first!");
-        setIsSuggesting(false);
+        setAiError("No purchase history found to base AI suggestions on. Add some expenses first!");
+        setIsSuggestingFromAI(false);
         return;
       }
 
@@ -189,29 +252,29 @@ export default function ShoppingListPage() {
           name,
           isPurchased: false,
           isAISuggested: true,
+          notes: "Suggested by AI based on past purchases."
         };
-         const existingItem = items.find(i => i.name.toLowerCase() === name.toLowerCase());
+         const existingItem = items.find(i => i.name.toLowerCase() === name.toLowerCase() && !i.isPurchased);
          if (!existingItem) {
            await addDoc(itemsCollectionRef, { ...suggestedItem, userId: user.uid, createdAt: serverTimestamp() });
          } else {
-            toast({title: "Suggestion Exists", description: `Suggested item "${name}" is already on your list.`});
+            toast({title: "Suggestion Exists", description: `AI suggested item "${name}" is already on your active list.`});
          }
       }
-      toast({ title: "AI Suggestions", description: "New suggestions added to your list if not already present." });
+      toast({ title: "AI Suggestions", description: "New AI suggestions added to your list if not already present." });
 
     } catch (err) {
-      console.error("Error getting suggestions:", err);
+      console.error("Error getting AI suggestions:", err);
       setAiError("Failed to get AI suggestions. Please try again.");
-      toast({ variant: "destructive", title: "AI Error", description: "Failed to get suggestions." });
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to get AI suggestions." });
     } finally {
-      setIsSuggesting(false);
+      setIsSuggestingFromAI(false);
     }
   };
   
   const clearAllItems = async () => {
     if (!user || items.length === 0) return;
     try {
-      // For simplicity, delete one by one. For many items, batch delete would be better.
       for (const item of items) {
         await deleteDoc(doc(db, "shoppingListItems", item.id));
       }
@@ -241,35 +304,74 @@ export default function ShoppingListPage() {
     <>
       <PageHeader
         title="Shopping List"
-        description="Plan your next shopping trip efficiently with AI assistance."
+        description="Plan your next shopping trip efficiently. Add items or get AI suggestions."
       />
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Smart Add Items</CardTitle>
-            <CardDescription>Tell AI what you need (e.g., "eggs and milk") or get quick suggestions.</CardDescription>
+            <CardTitle>Add Item to List</CardTitle>
+            <CardDescription>Type an item name. We'll show matches from your past purchases.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="agentic-prompt">What do you need to buy?</Label>
-              <Textarea
-                id="agentic-prompt"
-                placeholder="e.g., I need eggs, milk, and bread. Find the best price for eggs."
-                value={userPrompt}
-                onChange={(e) => setUserPrompt(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleAgenticAddItem())}
-                className="min-h-[80px]"
+            <div className="flex items-center gap-2">
+              <Input
+                id="item-name-input"
+                placeholder="e.g., Milk, Eggs, Bread"
+                value={newItemNameInput}
+                onChange={(e) => setNewItemNameInput(e.target.value)}
+                className="flex-grow"
+                aria-label="Item name"
               />
-              <Button onClick={handleAgenticAddItem} disabled={isProcessingAgentRequest || !userPrompt.trim() || authLoading || !user} className="mt-2 w-full">
-                {isProcessingAgentRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                Process Request & Add
+               <Button 
+                onClick={handleAddUntrackedItem} 
+                disabled={!newItemNameInput.trim() || authLoading || !user || (pastPurchaseSuggestions && pastPurchaseSuggestions.length > 0) }
+                variant="outline"
+                title="Add as new item if no suggestions match"
+               >
+                <PackagePlus className="mr-2 h-4 w-4" /> Add New
               </Button>
             </div>
+
+            {isLoadingSuggestions && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching your past purchases...
+              </div>
+            )}
+
+            {pastPurchaseSuggestions.length > 0 && !isLoadingSuggestions && (
+              <div className="mt-2 space-y-2">
+                <h4 className="text-sm font-medium text-muted-foreground">Suggestions from your history:</h4>
+                <ScrollArea className="h-[200px] rounded-md border p-2">
+                  <ul className="space-y-2">
+                    {pastPurchaseSuggestions.map(expense => (
+                      <li key={expense.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50 text-sm">
+                        <div>
+                          <span className="font-medium">{expense.name}</span>
+                          <div className="text-xs text-muted-foreground">
+                            {selectedCurrency.symbol}{expense.price.toFixed(2)}
+                            {expense.storeName && ` at ${expense.storeName}`}
+                            {expense.brand && ` (${expense.brand})`}
+                          </div>
+                        </div>
+                        <Button size="sm" variant="ghost" onClick={() => handleAddItemFromSuggestion(expense)} title="Add this version to list">
+                          <PlusCircle className="h-4 w-4 text-primary" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              </div>
+            )}
             
+            {newItemNameInput.trim() && !isLoadingSuggestions && pastPurchaseSuggestions.length === 0 && (
+                 <p className="text-sm text-muted-foreground">No exact matches in your purchase history for "{newItemNameInput}". You can still add it as a new item.</p>
+            )}
+
+
             <div className="pt-4 border-t">
-               <Button onClick={handleGetAISuggestions} disabled={isSuggesting || authLoading || !user} className="mt-2 w-full">
-                {isSuggesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Get Quick Suggestions (from past purchases)
+               <Button onClick={handleGetAISuggestions} disabled={isSuggestingFromAI || authLoading || !user} className="mt-2 w-full">
+                {isSuggestingFromAI ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Get AI Quick Suggestions
               </Button>
             </div>
             {aiError && <p className="text-sm text-destructive mt-2">{aiError}</p>}
@@ -293,46 +395,49 @@ export default function ShoppingListPage() {
                     <span>Loading list...</span>
                  </div>
             ) : items.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">Your shopping list is empty.</p>
+              <p className="text-muted-foreground text-center py-4">Your shopping list is empty. Add items using the panel on the left.</p>
             ) : (
-              <ul className="space-y-3 max-h-[400px] overflow-y-auto">
-                {items.map(item => (
-                  <li key={item.id} className="flex items-center justify-between p-3 rounded-md hover:bg-muted/50 transition-colors border-b last:border-b-0">
-                    <div className="flex items-start space-x-3 flex-grow">
-                      <Checkbox
-                        id={`item-${item.id}`}
-                        checked={item.isPurchased}
-                        onCheckedChange={() => handleToggleItemPurchased(item.id)}
-                        className="mt-1"
-                      />
-                      <div className="flex-grow">
-                        <Label
-                          htmlFor={`item-${item.id}`}
-                          className={cn("font-medium", item.isPurchased && "line-through text-muted-foreground")}
-                        >
-                          {item.name}
-                           {item.isAISuggested && ( <Sparkles className="inline-block ml-1 h-3 w-3 text-primary" title="AI Suggested" /> )}
-                        </Label>
-                        {(item.price || item.storeName || item.brand || item.notes) && (
-                          <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
-                            {item.price != null && <p>Price: {selectedCurrency.symbol}{item.price.toFixed(2)}</p>}
-                            {item.storeName && <p>Store: {item.storeName}</p>}
-                            {item.brand && <p>Brand: {item.brand}</p>}
-                            {item.notes && <p className="italic">{item.notes}</p>}
-                          </div>
-                        )}
+              <ScrollArea className="h-[calc(100%-80px)] sm:h-[400px] pr-3">
+                <ul className="space-y-3">
+                  {items.map(item => (
+                    <li key={item.id} className="flex items-center justify-between p-3 rounded-md hover:bg-muted/50 transition-colors border-b last:border-b-0">
+                      <div className="flex items-start space-x-3 flex-grow">
+                        <Checkbox
+                          id={`item-${item.id}`}
+                          checked={item.isPurchased}
+                          onCheckedChange={() => handleToggleItemPurchased(item.id)}
+                          className="mt-1"
+                          aria-label={`Mark ${item.name} as purchased`}
+                        />
+                        <div className="flex-grow">
+                          <Label
+                            htmlFor={`item-${item.id}`}
+                            className={cn("font-medium cursor-pointer", item.isPurchased && "line-through text-muted-foreground")}
+                          >
+                            {item.name}
+                            {item.isAISuggested && ( <Sparkles className="inline-block ml-1 h-3 w-3 text-primary" title="AI Suggested" /> )}
+                          </Label>
+                          {(item.price != null || item.storeName || item.brand || item.notes) && (
+                            <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
+                              {item.price != null && <p>Price: {selectedCurrency.symbol}{item.price.toFixed(2)}</p>}
+                              {item.storeName && <p>Store: {item.storeName}</p>}
+                              {item.brand && <p>Brand: {item.brand}</p>}
+                              {item.notes && <p className="italic">{item.notes}</p>}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)} aria-label="Remove item" className="ml-2 self-start shrink-0">
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                      <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)} aria-label={`Remove ${item.name}`} className="ml-2 self-start shrink-0">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </ScrollArea>
             )}
             {items.length > 0 && !isLoadingItems && (
                 <div className="mt-4 pt-4 border-t flex flex-col sm:flex-row gap-2">
-                    <Button onClick={clearPurchasedItems} variant="outline" className="flex-1" disabled={authLoading || !user}>Clear Purchased</Button>
+                    <Button onClick={clearPurchasedItems} variant="outline" className="flex-1" disabled={authLoading || !user || items.filter(i=>i.isPurchased).length === 0}>Clear Purchased</Button>
                     <Button onClick={clearAllItems} variant="destructive" className="flex-1" disabled={authLoading || !user}>Clear All Items</Button>
                 </div>
             )}
@@ -343,3 +448,5 @@ export default function ShoppingListPage() {
   );
 }
 
+
+    
