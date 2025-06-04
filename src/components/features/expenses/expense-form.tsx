@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Card, CardContent } from "@/components/ui/card"; // Added Card and CardContent
 import { CalendarIcon, Sparkles, Info, Loader2, PlusCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -78,7 +79,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
         storeName: initialData.storeName || '',
         brand: initialData.brand || ''
       });
-      setPastExpenseSuggestions([]); // Clear suggestions when editing an existing expense
+      setPastExpenseSuggestions([]); 
     } else {
       reset({
         name: '',
@@ -109,7 +110,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
       const cache = cacheString ? JSON.parse(cacheString) : {};
       cache[item.toLowerCase()] = category;
       localStorage.setItem(LOCAL_STORAGE_CATEGORY_CACHE_KEY, JSON.stringify(cache));
-    } catch (e) {
+    } catch (e)      {
       console.error("Error writing category cache:", e);
     }
   };
@@ -165,11 +166,11 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
       date: format(data.date, 'yyyy-MM-dd'), 
     };
     onSubmitExpense(expenseData);
-    setPastExpenseSuggestions([]); // Clear suggestions after submit
+    setPastExpenseSuggestions([]); 
   };
 
   const handleSearchPastExpenses = useCallback(async (searchTerm: string) => {
-    if (!searchTerm.trim() || !user || initialData) { // Don't search if editing
+    if (!searchTerm.trim() || !user || initialData) { 
       setPastExpenseSuggestions([]);
       return;
     }
@@ -180,8 +181,8 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
       const q = query(
         expensesCol, 
         where("userId", "==", user.uid),
-        orderBy("date", "desc"), // Get recent ones first
-        limit(20) // Limit initial fetch for broader client-side filtering
+        orderBy("date", "desc"), 
+        limit(20) 
       );
 
       const snapshot = await getDocs(q);
@@ -189,7 +190,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
       
       const matchedExpenses = allUserExpenses.filter(expense => 
         expense.name.toLowerCase().includes(lowerSearchTerm)
-      ).slice(0, 5); // Show top 5 matches after client-side filter
+      ).slice(0, 5); 
 
       setPastExpenseSuggestions(matchedExpenses);
     } catch (error) {
@@ -218,8 +219,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
     setValue('category', suggestion.category);
     setValue('storeName', suggestion.storeName || '');
     setValue('brand', suggestion.brand || '');
-    // Optionally, could also set the date if needed, but typically users want current date for new entries
-    setPastExpenseSuggestions([]); // Clear suggestions after one is used
+    setPastExpenseSuggestions([]); 
     toast({ title: "Suggestion Applied", description: `Details from "${suggestion.name}" pre-filled.`});
   };
 
@@ -233,7 +233,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
             id="name" 
             {...register('name')} 
             className={cn(errors.name && "border-destructive")} 
-            disabled={!!initialData} // Disable if editing, as we don't want to trigger search
+            disabled={!!initialData} 
           />
           <Button type="button" onClick={handleSuggestCategory} disabled={isCategorizing || !itemName || !!initialData} size="sm" variant="outline">
             {isCategorizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
@@ -331,7 +331,7 @@ export function ExpenseForm({ onSubmitExpense, initialData }: ExpenseFormProps) 
                   <Calendar
                     mode="single"
                     selected={field.value instanceof Date ? field.value : undefined}
-                    onSelect={(date) => field.onChange(date || new Date())} // Ensure date is always Date or fallback
+                    onSelect={(date) => field.onChange(date || new Date())} 
                     initialFocus
                     disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
                   />
